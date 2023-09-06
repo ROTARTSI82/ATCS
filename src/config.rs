@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Read;
 use std::ops::Range;
+use crate::serialize::load_net_from_file;
 
 /// The type of the values contained in the network
 /// has been extracted to a type variable for easy modification.
@@ -37,7 +38,6 @@ pub fn set_and_echo_config(
    config: &mut BTreeMap<String, ConfigValue>,
 ) -> Result<(), std::io::Error>
 {
-   println!("Loaded configuration");
    if let Some(IntList(list)) = config.get("network_topology")
    {
       net.layers = (0..list.len() - 1)
@@ -98,7 +98,7 @@ pub fn set_and_echo_config(
          {
             if let Some(Text(filename)) = config.get("load_file")
             {
-               todo!("not implemented")
+               load_net_from_file(net, filename.as_str())?;
             }
             else
             {
@@ -219,6 +219,7 @@ pub fn parse_config(filename: &str) -> Result<BTreeMap<String, ConfigValue>, std
       }
    } // for (line, line_no) in contents.split('\n').zip(1..)
 
+   println!("parsed configuration from file `{}`", filename);
    Ok(map)
 } // fn load_config(&str) -> Result<HashMap<String, ConfigValue>, io::Error>
 

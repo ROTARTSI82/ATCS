@@ -8,7 +8,7 @@ const MAGIC_HEADER: &'static [u8] = b"ATNeuralNetwork";
 pub fn write_net_to_file(net: &NeuralNetwork, filename: &str) -> Result<(), std::io::Error>
 {
    let mut bytes = MAGIC_HEADER.to_vec();
-   bytes.extend(net.layers.len().to_be_bytes());
+   bytes.extend((net.layers.len() as u32).to_be_bytes());
 
    let input_size = net
       .layers
@@ -41,7 +41,30 @@ pub fn write_net_to_file(net: &NeuralNetwork, filename: &str) -> Result<(), std:
 
    let mut file = File::create(filename)?;
    file.write_all(bytes.as_slice())?;
+
+   println!("saved neural network to file `{}`", filename);
    Ok(())
+}
+
+const I32_SIZE: usize = std::mem::size_of::<i32>();
+const NUM_SIZE: usize = std::mem::size_of::<NumT>();
+
+// rust doesn't have a way to do this generically, so i have to
+// copy and paste this function for the 2 different types i need it for
+fn consume_i32(list: &[u8]) -> Result<i32, std::io::Error>
+{
+   Ok(i32::from_be_bytes(list[..I32_SIZE].try_into().map_err(
+      |_| make_err("corrupt network depth/input size"),
+   )?))
+}
+
+fn consume_num(list: &[u8]) -> Result<NumT, std::io::Error>
+{
+   Ok(NumT::from_be_bytes(
+      list[..NUM_SIZE]
+         .try_into()
+         .map_err(|_| make_err("corrupt weight/bias"))?,
+   ))
 }
 
 pub fn load_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(), std::io::Error>
@@ -59,56 +82,59 @@ pub fn load_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(),
       ))?;
    }
 
-   let mismatch = "network topology in model file and in config do not match";
    let bytes = &bytes[MAGIC_HEADER.len()..];
 
-   const I32_SIZE: usize = std::mem::size_of::<i32>();
-   const NUM_SIZE: usize = std::mem::size_of::<NumT>();
-
-   let consume_i32 = |list: &[u8]| -> Result<i32, std::io::Error> {
-      Ok(i32::from_be_bytes(
-         bytes[..I32_SIZE]
-            .try_into()
-            .map_err(|_| make_err("corrupt network depth"))?,
-      ))
-   };
-
-   let consume_num = |list: &[u8]| -> Result<NumT, std::io::Error> {
-      Ok(NumT::from_be_bytes(
-         bytes[..NUM_SIZE]
-            .try_into()
-            .map_err(|_| make_err("corrupt weight/bias"))?,
-      ))
-   };
-
-   if consume_i32(&bytes)? != net.layers.len() as i32
+   let model_layers = consume_i32(&bytes)?;
+   let config_layers = net.layers.len() as i32;
+   if model_layers != config_layers
    {
-      Err(make_err(mismatch))?;
+      Err(make_err(
+         format!(
+            "model file is {} layers, config is {} layers",
+            model_layers, config_layers
+         )
+         .as_str(),
+      ))?;
    }
 
    let bytes = &bytes[I32_SIZE..];
-   let input = consume_i32(&bytes)?;
-
-   let expected_input = net
+   let model_input = consume_i32(&bytes)?;
+   let config_input = net
       .layers
       .first()
       .ok_or(make_err("layers empty"))?
       .num_inputs;
 
-   if input != expected_input
+   if model_input != config_input
    {
-      Err(make_err(mismatch))?;
+      Err(make_err(
+         format!(
+            "model file is {} layers, config is {} layers",
+            model_input, config_input
+         )
+         .as_str(),
+      ))?;
    }
 
    let bytes = &bytes[I32_SIZE..];
-   let valid = net.layers.iter().zip(0..).all(|(layer, it)| {
-      let raw = bytes[it * I32_SIZE..it * I32_SIZE + I32_SIZE].try_into();
-      raw.is_ok() && i32::from_be_bytes(raw.unwrap()) == layer.num_outputs
-   });
 
-   if !valid
+   for (layer, it) in net.layers.iter().zip(0..)
    {
-      Err(make_err(mismatch))?;
+      let model_out = i32::from_be_bytes(
+         bytes[it * I32_SIZE..it * I32_SIZE + I32_SIZE]
+            .try_into()
+            .map_err(|_| make_err("corrupt layer size"))?,
+      );
+      if model_out != layer.num_outputs
+      {
+         Err(make_err(
+            format!(
+               "model file layer {} is {} outputs, config is {} outputs",
+               it, model_out, layer.num_outputs
+            )
+            .as_str(),
+         ))?;
+      }
    }
 
    let bytes = &bytes[I32_SIZE * net.layers.len()..];
@@ -129,5 +155,6 @@ pub fn load_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(),
       }
    }
 
+   println!("loaded neural network from file `{}`", filename);
    Ok(())
 }

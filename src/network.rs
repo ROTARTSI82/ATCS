@@ -1,8 +1,4 @@
-use crate::config::ConfigValue::{IntList, Text};
-use crate::config::{ident, ident_deriv, make_err, ConfigValue, FuncT, NumT};
-use std::collections::BTreeMap;
-use std::fs::File;
-use std::io::{Read, Write};
+use crate::config::{ident, ident_deriv, FuncT, NumT};
 
 #[derive(Debug)]
 pub struct NeuralNetwork
