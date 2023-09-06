@@ -1,0 +1,30 @@
+do_training: true
+max_iterations: int 1000
+error_cutoff: float 1e-5
+
+network_topology: [2,2,1]
+activation_function: "identity"
+
+initialization_mode: "randomize"
+rand_lo: float -1.5
+rand_hi: float 1.5
+fixed_value: float 1
+
+load_file: "something.txt"
+save_file: "something.txt"
+
+lambda: float 1e-4
+
+
+set 0,0,0,0: float 0.01
+set 0,0,1,0: float 0.44
+set 0,0,0,1: float -1.44
+set 0,0,1,1: float 0.68
+
+set 0,1,0: float 0
+set 0,1,1: float 0
+
+set 1,0,0,0: float 2.22
+set 1,0,1,0: float -0.46
+
+set 1,1,0: float 0
