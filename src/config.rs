@@ -1,11 +1,11 @@
 use crate::config::ConfigValue::{Boolean, IntList, Integer, Numeric, Text};
 use crate::network::{NetworkLayer, NeuralNetwork};
+use crate::serialize::load_net_from_file;
 use rand::prelude::*;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Read;
 use std::ops::Range;
-use crate::serialize::load_net_from_file;
 
 /// The type of the values contained in the network
 /// has been extracted to a type variable for easy modification.
@@ -45,12 +45,13 @@ pub fn set_and_echo_config(
          .collect();
       net.activations = list
          .iter()
-         .skip(1)
          .map(|it| vec![0 as NumT; *it as usize].into_boxed_slice())
          .collect();
 
-      println!("\tnetwork_topology: {:?}", list);
-      config.remove("network_topology");
+      net.max_width = *list.iter().max().ok_or(make_err("net topology empty"))?;
+
+      let mk_vec = || vec![0 as NumT; net.max_width as usize].into_boxed_slice();
+      net.derivs = [mk_vec(), mk_vec()];
    }
    else
    {
@@ -68,9 +69,6 @@ pub fn set_and_echo_config(
             "invalid value for key 'activation_function' in config",
          ))?,
       };
-
-      println!("\tactivation_function: {:?}", func);
-      config.remove("activation_function");
    }
    else
    {
@@ -113,12 +111,14 @@ pub fn set_and_echo_config(
       Err(make_err("no valid 'initialization_mode' in config"))?;
    }
 
+   if let Some(Numeric(lambda)) = config.get("learn_rate")
+   {
+      net.learn_rate = *lambda;
+   }
+
    for (k, v) in config.iter()
    {
-      println!("unknown value {}: {:?} in config", k, v);
-      // Err(make_err(
-      //    format!("unrecognized value {}: {:?} in config", k, v).as_ref(),
-      // ))?;
+      println!("\t{}: {:?}", k, v);
    }
 
    Ok(())
