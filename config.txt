@@ -1,6 +1,9 @@
 do_training: true
-max_iterations: int 1000
+max_iterations: int 5000
 error_cutoff: float 1e-5
+
+# how often to print out training loss (in # of iterations)
+printout_period: int 100
 
 network_topology: [2,2,1]
 activation_function: "sigmoid"
@@ -13,4 +16,4 @@ fixed_value: float 1
 load_file: "something.txt"
 save_file: "xor_sigmoid.txt"
 
-learn_rate: float 1e-1
+learn_rate: float 1

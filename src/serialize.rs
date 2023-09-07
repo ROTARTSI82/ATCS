@@ -3,7 +3,7 @@ use crate::network::NeuralNetwork;
 use std::fs::File;
 use std::io::{Read, Write};
 
-const MAGIC_HEADER: &'static [u8] = b"ATNeuralNetwork";
+const MAGIC_HEADER: &[u8] = b"ATNeuralNetwork";
 
 pub fn write_net_to_file(net: &NeuralNetwork, filename: &str) -> Result<(), std::io::Error>
 {
@@ -19,24 +19,15 @@ pub fn write_net_to_file(net: &NeuralNetwork, filename: &str) -> Result<(), std:
    let layer_bytes = net
       .layers
       .iter()
-      .map(|it| it.num_outputs.to_be_bytes())
-      .flatten();
+      .flat_map(|it| it.num_outputs.to_be_bytes());
 
    bytes.extend(input_size);
    bytes.extend(layer_bytes);
 
-   let flatten_to_bytes = |list: &Box<[NumT]>| {
-      list
-         .to_vec()
-         .into_iter()
-         .map(|it| it.to_be_bytes())
-         .flatten()
-   };
-
    for layer in net.layers.iter()
    {
-      bytes.extend(flatten_to_bytes(&layer.weights));
-      bytes.extend(flatten_to_bytes(&layer.biases));
+      bytes.extend(layer.weights.iter().flat_map(|it| it.to_be_bytes()));
+      bytes.extend(layer.biases.iter().flat_map(|it| it.to_be_bytes()));
    }
 
    let mut file = File::create(filename)?;
@@ -49,8 +40,13 @@ pub fn write_net_to_file(net: &NeuralNetwork, filename: &str) -> Result<(), std:
 const I32_SIZE: usize = std::mem::size_of::<i32>();
 const NUM_SIZE: usize = std::mem::size_of::<NumT>();
 
-// rust doesn't have a way to do this generically, so i have to
-// copy and paste this function for the 2 different types i need it for
+/**
+ * rust doesn't have an easy way to do this with generics, since you can't
+ * call from_be_bytes() with an unknown type. In order to do that, I would
+ * have to write a trait and implement it for both i32 and NumT.
+ * At this point, it's easier to just copy and paste these methods twice.
+ *
+ */
 fn consume_i32(list: &[u8]) -> Result<i32, std::io::Error>
 {
    Ok(i32::from_be_bytes(list[..I32_SIZE].try_into().map_err(
@@ -84,7 +80,7 @@ pub fn load_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(),
 
    let bytes = &bytes[MAGIC_HEADER.len()..];
 
-   let model_layers = consume_i32(&bytes)?;
+   let model_layers = consume_i32(bytes)?;
    let config_layers = net.layers.len() as i32;
    if model_layers != config_layers
    {
@@ -98,7 +94,7 @@ pub fn load_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(),
    }
 
    let bytes = &bytes[I32_SIZE..];
-   let model_input = consume_i32(&bytes)?;
+   let model_input = consume_i32(bytes)?;
    let config_input = net
       .layers
       .first()
@@ -109,7 +105,7 @@ pub fn load_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(),
    {
       Err(make_err(
          format!(
-            "model file is {} layers, config is {} layers",
+            "model file is {} inputs, config is {} inputs",
             model_input, config_input
          )
          .as_str(),
@@ -118,7 +114,7 @@ pub fn load_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(),
 
    let bytes = &bytes[I32_SIZE..];
 
-   for (layer, it) in net.layers.iter().zip(0..)
+   for (it, layer) in net.layers.iter().enumerate()
    {
       let model_out = i32::from_be_bytes(
          bytes[it * I32_SIZE..it * I32_SIZE + I32_SIZE]

@@ -12,6 +12,12 @@ pub struct NeuralNetwork
 
    pub learn_rate: NumT,
    pub max_width: i32,
+
+   pub max_iters: i32,
+   pub err_threshold: NumT,
+   pub do_training: bool,
+
+   pub printout_period: i32,
 }
 
 #[derive(Debug)]
@@ -82,7 +88,7 @@ impl NetworkLayer
       learn_rate: NumT,
       act_prime: FuncT,
       deriv_wrt_outp: &[NumT],
-      dest: &mut [NumT]
+      dest_deriv_wrt_inp: &mut [NumT],
    )
    {
       assert_eq!(outp.len(), self.num_outputs as usize);
@@ -90,21 +96,22 @@ impl NetworkLayer
 
       const MAGN_FACTOR: NumT = 1e-5;
 
-      dest.fill(0 as NumT);
-      for (act, out_it) in outp.iter().zip(0..)
+      dest_deriv_wrt_inp.fill(0 as NumT);
+      for (out_it, act) in outp.iter().enumerate()
       {
          // dCost/dInner = dCost/dOutput * dOutput/dInner
-         let deriv_wrt_inner = deriv_wrt_outp[out_it as usize] * act_prime(*act);
+         let deriv_wrt_inner = deriv_wrt_outp[out_it] * act_prime(*act);
 
-         for (wrt_outer, in_it) in dest.iter_mut().zip(0..)
+         for (in_it, wrt_outer) in dest_deriv_wrt_inp.iter_mut().enumerate()
          {
-            *wrt_outer += deriv_wrt_inner * self.get_weight(in_it, out_it);
+            *wrt_outer += deriv_wrt_inner * self.get_weight(in_it as i32, out_it as i32);
 
-            *self.get_weight_mut(in_it, out_it) +=
-               deriv_wrt_inner * inp[in_it as usize] * learn_rate - MAGN_FACTOR * self.get_weight(in_it, out_it);
+            *self.get_weight_mut(in_it as i32, out_it as i32) +=
+               deriv_wrt_inner * inp[in_it] * learn_rate
+                  - MAGN_FACTOR * self.get_weight(in_it as i32, out_it as i32);
          }
 
-         self.biases[out_it as usize] += deriv_wrt_inner * learn_rate - MAGN_FACTOR * self.biases[out_it as usize];
+         self.biases[out_it] += deriv_wrt_inner * learn_rate - MAGN_FACTOR * self.biases[out_it];
       }
    }
 }
@@ -121,17 +128,22 @@ impl NeuralNetwork
          learn_rate: 1 as NumT,
          max_width: 0,
          derivs: [Box::new([]), Box::new([])],
+
+         max_iters: 0,
+         err_threshold: 0 as NumT,
+         do_training: false,
+         printout_period: 0,
       }
    }
 
    pub(crate) fn get_outputs(&self) -> &[NumT]
    {
-      return &self.activations[self.activations.len() - 1];
+      &self.activations[self.activations.len() - 1]
    }
 
    pub(crate) fn feed_forward(&mut self)
    {
-      for (layer, index) in self.layers.iter().zip(0..)
+      for (index, layer) in self.layers.iter().enumerate()
       {
          let (input_slice, output_slice) = self.activations.split_at_mut(index + 1);
          layer.feed_forward(
@@ -144,24 +156,25 @@ impl NeuralNetwork
 
    pub fn get_inputs(&mut self) -> &mut [NumT]
    {
-      &mut *self.activations[0]
+      &mut self.activations[0]
    }
 
    // returns the loss function for this test case
    pub fn feed_backwards(&mut self, expected_out: &[NumT]) -> NumT
    {
+      assert_eq!(expected_out.len(), self.get_outputs().len());
+
       let mut cost = 0 as NumT;
       // println!("got {:?} expected {:?}", self.get_outputs(), expected_out);
-      for idx in 0..(self.get_outputs().len())
+      for (idx, expected) in expected_out.iter().enumerate()
       {
          // i've messed up a minus sign somewhere, this somehow is what i need to do??
-         let diff = expected_out[idx] - self.get_outputs()[idx];
+         let diff = expected - self.get_outputs()[idx];
          cost += 0.5 * diff * diff;
          self.derivs[0][idx] = diff;
       }
 
-      let num_layers = self.layers.len();
-      for (layer, index) in self.layers.iter_mut().zip(0..num_layers).rev()
+      for (index, layer) in self.layers.iter_mut().enumerate().rev()
       {
          let (first, second) = self.derivs.split_at_mut(1);
          let (inp_slice, outp_slice) = self.activations.split_at(index + 1);
@@ -170,7 +183,7 @@ impl NeuralNetwork
             &outp_slice[0],
             self.learn_rate,
             self.threshold_func_deriv,
-            &mut first[0][..layer.num_outputs as usize],
+            &first[0][..layer.num_outputs as usize],
             &mut second[0][..layer.num_inputs as usize],
          );
          self.derivs.swap(0, 1);

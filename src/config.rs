@@ -27,6 +27,20 @@ pub enum ConfigValue
    Boolean(bool),
 }
 
+#[macro_export]
+macro_rules! expect_config {
+   ($name: pat, $str_name: expr, $body: expr) => {
+      if let $name = $str_name
+      {
+         $body
+      }
+      else
+      {
+         Err(make_err(concat!("no valid ", stringify!($str_name))))?;
+      }
+   };
+}
+
 /**
  * Initializes the neural network based off of a configuration map
  * read from the configuration file. If the configuration is invalid,
@@ -35,11 +49,10 @@ pub enum ConfigValue
  */
 pub fn set_and_echo_config(
    net: &mut NeuralNetwork,
-   config: &mut BTreeMap<String, ConfigValue>,
+   config: &BTreeMap<String, ConfigValue>,
 ) -> Result<(), std::io::Error>
 {
-   if let Some(IntList(list)) = config.get("network_topology")
-   {
+   expect_config!(Some(IntList(list)), config.get("network_topology"), {
       net.layers = (0..list.len() - 1)
          .map(|it| NetworkLayer::new(list[it], list[it + 1]))
          .collect();
@@ -52,14 +65,9 @@ pub fn set_and_echo_config(
 
       let mk_vec = || vec![0 as NumT; net.max_width as usize].into_boxed_slice();
       net.derivs = [mk_vec(), mk_vec()];
-   }
-   else
-   {
-      Err(make_err("config requires IntList 'network_topology'"))?;
-   }
+   });
 
-   if let Some(Text(func)) = config.get("activation_function")
-   {
+   expect_config!(Some(Text(func)), config.get("activation_function"), {
       (net.threshold_func, net.threshold_func_deriv) = match func.as_str()
       {
          "identity" => (ident as FuncT, ident_deriv as FuncT),
@@ -69,56 +77,76 @@ pub fn set_and_echo_config(
             "invalid value for key 'activation_function' in config",
          ))?,
       };
-   }
-   else
-   {
-      Err(make_err("no valid 'activation_function' in config"))?;
-   }
+   });
 
-   if let Some(Text(init_mode)) = config.get("initialization_mode")
-   {
-      match init_mode.as_ref()
-      {
-         "randomize" =>
-         {
-            if let (Some(Numeric(hi)), Some(Numeric(lo))) =
-               (config.get("rand_hi"), config.get("rand_lo"))
-            {
-               randomize_network(net, *lo..*hi);
-            }
-            else
-            {
-               Err(make_err("invalid 'rand_hi' and 'rand_lo' range"))?;
-            }
-         }
-         "fixed_value" => todo!("not implemented"),
-         "from_file" =>
-         {
-            if let Some(Text(filename)) = config.get("load_file")
-            {
-               load_net_from_file(net, filename.as_str())?;
-            }
-            else
-            {
-               Err(make_err("no valid 'load_file' filename in config"))?;
-            }
-         }
-         _ => Err(make_err("invalid 'initialization_mode' in config"))?,
-      }
-   }
-   else
-   {
-      Err(make_err("no valid 'initialization_mode' in config"))?;
-   }
+   expect_config!(Some(Text(init_mode)), config.get("initialization_mode"), {
+      set_initialization_mode(net, init_mode, config)?;
+   });
 
-   if let Some(Numeric(lambda)) = config.get("learn_rate")
-   {
-      net.learn_rate = *lambda;
-   }
+   expect_config!(
+      Some(Numeric(lambda)),
+      config.get("learn_rate"),
+      net.learn_rate = *lambda
+   );
+
+   expect_config!(
+      Some(Integer(max_iters)),
+      config.get("max_iterations"),
+      net.max_iters = *max_iters
+   );
+
+   expect_config!(
+      Some(Integer(printout)),
+      config.get("printout_period"),
+      net.printout_period = *printout
+   );
+
+   expect_config!(
+      Some(Numeric(cutoff)),
+      config.get("error_cutoff"),
+      net.err_threshold = *cutoff
+   );
+
+   expect_config!(
+      Some(Boolean(train)),
+      config.get("do_training"),
+      net.do_training = *train
+   );
 
    for (k, v) in config.iter()
    {
       println!("\t{}: {:?}", k, v);
+   }
+
+   Ok(())
+}
+
+fn set_initialization_mode(
+   net: &mut NeuralNetwork,
+   init_mode: &str,
+   config: &BTreeMap<String, ConfigValue>,
+) -> Result<(), std::io::Error>
+{
+   match init_mode
+   {
+      "randomize" =>
+      {
+         expect_config!(
+            (Some(Numeric(hi)), Some(Numeric(lo))),
+            (config.get("rand_hi"), config.get("rand_lo")),
+            randomize_network(net, *lo..*hi)
+         );
+      }
+      "fixed_value" => todo!("not implemented"),
+      "from_file" =>
+      {
+         expect_config!(
+            Some(Text(filename)),
+            config.get("load_file"),
+            load_net_from_file(net, filename.as_str())?
+         );
+      }
+      _ => Err(make_err("invalid 'initialization_mode' in config"))?,
    }
 
    Ok(())
@@ -162,7 +190,7 @@ pub fn parse_config(filename: &str) -> Result<BTreeMap<String, ConfigValue>, std
    let mut contents = String::new();
    file.read_to_string(&mut contents)?;
 
-   for (line, line_no) in contents.split("\n").zip(1..)
+   for (line, line_no) in contents.split('\n').zip(1..)
    {
       let line = line.trim();
       if line.starts_with('#') || line.is_empty()
@@ -173,15 +201,15 @@ pub fn parse_config(filename: &str) -> Result<BTreeMap<String, ConfigValue>, std
       let err_str = format!("malformed config line {} ({})", line_no, line);
       let err_msg = || make_err(err_str.as_str());
 
-      let key_value_pair: Vec<_> = line.split(":").collect();
-      let key = key_value_pair.get(0).ok_or(err_msg())?.trim().to_string();
+      let key_value_pair: Vec<_> = line.split(':').collect();
+      let key = key_value_pair.first().ok_or(err_msg())?.trim().to_string();
       let val = key_value_pair.get(1).ok_or(err_msg())?.trim().to_string();
 
-      if val.starts_with("[")
+      if val.starts_with('[')
       {
-         let end = val.rfind("]").ok_or(err_msg())?;
+         let end = val.rfind(']').ok_or(err_msg())?;
          let list = val[1..end]
-            .split(",")
+            .split(',')
             .map(|x| x.trim().parse::<i32>())
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| err_msg())?;
@@ -192,25 +220,19 @@ pub fn parse_config(filename: &str) -> Result<BTreeMap<String, ConfigValue>, std
       {
          map.insert(key, Boolean(val == "true"));
       }
-      else if val.starts_with("int")
+      else if let Some(stripped) = val.strip_prefix("int")
       {
-         let processed_val = val["int".len()..]
-            .trim()
-            .parse::<i32>()
-            .map_err(|_| err_msg())?;
+         let processed_val = stripped.trim().parse::<i32>().map_err(|_| err_msg())?;
          map.insert(key, Integer(processed_val));
       }
-      else if val.starts_with("float")
+      else if let Some(stripped) = val.strip_prefix("float")
       {
-         let processed_val = val["float".len()..]
-            .trim()
-            .parse::<NumT>()
-            .map_err(|_| err_msg())?;
+         let processed_val = stripped.trim().parse::<NumT>().map_err(|_| err_msg())?;
          map.insert(key, Numeric(processed_val));
       }
-      else if val.starts_with("\"")
+      else if val.starts_with('\"')
       {
-         let end = val.rfind("\"").ok_or(err_msg())?;
+         let end = val.rfind('\"').ok_or(err_msg())?;
          map.insert(key, Text(String::from(&val[1..end])));
       }
       else
