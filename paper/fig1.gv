@@ -1,0 +1,37 @@
+
+digraph test {
+    a00[label=<a<SUB>00</SUB>>];
+    a01[label=<a<SUB>01</SUB>>];
+    a02[label=<a<SUB>02</SUB>>];
+    a03[label=<a<SUB>03</SUB>>];
+
+    a10[label=<a<SUB>10</SUB>>];
+    a11[label=<a<SUB>11</SUB>>];
+    a12[label=<a<SUB>12</SUB>>];
+
+    {rank = same; a00 a01 a02 a03}
+    {rank = same; a10 a11 a12}
+
+    a00 -> a10 [label=<w<SUB>000</SUB>>];
+    a01 -> a10 [label=<w<SUB>010</SUB>>];
+    a02 -> a10 [label=<w<SUB>020</SUB>>];
+    // a03 -> a10 [label=<w<SUB>030</SUB>>];
+
+    a00 -> a11 [label=<w<SUB>001</SUB>>];
+    a01 -> a11 [label=<w<SUB>011</SUB>>];
+    a02 -> a11 [label=<w<SUB>021</SUB>>];
+    // a03 -> a11 [label=<w<SUB>031</SUB>>];
+
+    a00 -> a12 [label=<w<SUB>002</SUB>>];
+    a01 -> a12 [label=<w<SUB>012</SUB>>];
+    a02 -> a12 [label=<w<SUB>022</SUB>>];
+    // a03 -> a12 [label=<w<SUB>032</SUB>>];
+
+    a10 -> a20 [label=<w<SUB>100</SUB>>];
+    a11 -> a20 [label=<w<SUB>110</SUB>>];
+    a12 -> a20 [label=<w<SUB>120</SUB>>];
+
+    a10 -> a21 [label=<w<SUB>101</SUB>>];
+    a11 -> a21 [label=<w<SUB>111</SUB>>];
+    a12 -> a21 [label=<w<SUB>121</SUB>>];
+}

@@ -1,5 +1,5 @@
-use crate::config::ConfigValue::{Boolean, IntList, Integer, Numeric, Text};
-use crate::network::{NetworkLayer, NeuralNetwork};
+use crate::config::ConfigValue::{Boolean, FloatList, IntList, Integer, Numeric, Text};
+use crate::network::{NetworkLayer, NeuralNetwork, TrainCase};
 use crate::serialize::load_net_from_file;
 use rand::prelude::*;
 use std::collections::BTreeMap;
@@ -24,6 +24,7 @@ pub enum ConfigValue
    Numeric(NumT),
    Integer(i32),
    IntList(Vec<i32>),
+   FloatList(Vec<NumT>),
    Boolean(bool),
 }
 
@@ -50,6 +51,7 @@ macro_rules! expect_config {
 pub fn set_and_echo_config(
    net: &mut NeuralNetwork,
    config: &BTreeMap<String, ConfigValue>,
+   train_data: &mut Vec<TrainCase>
 ) -> Result<(), std::io::Error>
 {
    expect_config!(Some(IntList(list)), config.get("network_topology"), {
@@ -116,6 +118,42 @@ pub fn set_and_echo_config(
    for (k, v) in config.iter()
    {
       println!("\t{}: {:?}", k, v);
+
+      if net.do_training && k.starts_with("case")
+      {
+         if let FloatList(outp) = v
+         {
+            let err_msg = || make_err("invalid test case statement");
+            let begin = k.find('[').ok_or(err_msg())? + 1;
+            let end = k.rfind(']').ok_or(err_msg())?;
+            let sub = &k[begin..end];
+
+            let vec = sub
+               .split(',')
+               .map(|x| x.trim().parse::<NumT>())
+               .collect::<Result<Vec<_>, _>>()
+               .map_err(|_| err_msg())?;
+
+            if vec.len() != net.layers.first().unwrap().num_inputs as usize
+               || outp.len() != net.layers.last().unwrap().num_outputs as usize
+            {
+               Err(make_err(
+                  "case size does not match configured input/output size",
+               ))?;
+            }
+            else
+            {
+               train_data.push(TrainCase {
+                  inp: vec.into_boxed_slice(),
+                  outp: outp.clone().into_boxed_slice(),
+               });
+            }
+         }
+         else
+         {
+            Err(make_err("invalid value for case"))?;
+         }
+      }
    }
 
    Ok(())
@@ -205,16 +243,27 @@ pub fn parse_config(filename: &str) -> Result<BTreeMap<String, ConfigValue>, std
       let key = key_value_pair.first().ok_or(err_msg())?.trim().to_string();
       let val = key_value_pair.get(1).ok_or(err_msg())?.trim().to_string();
 
-      if val.starts_with('[')
+      if val.starts_with("int[")
       {
          let end = val.rfind(']').ok_or(err_msg())?;
-         let list = val[1..end]
+         let list = val["int[".len()..end]
             .split(',')
             .map(|x| x.trim().parse::<i32>())
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| err_msg())?;
 
          map.insert(key, IntList(list));
+      }
+      else if val.starts_with("float[")
+      {
+         let end = val.rfind(']').ok_or(err_msg())?;
+         let list = val["float[".len()..end]
+            .split(',')
+            .map(|x| x.trim().parse::<NumT>())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| err_msg())?;
+
+         map.insert(key, FloatList(list));
       }
       else if val == "true" || val == "false"
       {

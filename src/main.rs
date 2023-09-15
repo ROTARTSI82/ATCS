@@ -1,8 +1,9 @@
 mod config;
+mod convolve;
 mod network;
 mod serialize;
 
-use crate::network::NeuralNetwork;
+use crate::network::{NeuralNetwork, TrainCase};
 
 extern crate core;
 
@@ -18,17 +19,10 @@ fn main() -> Result<(), Box<dyn Error>>
    let config = parse_config(filename)?;
 
    let mut network = NeuralNetwork::new();
-   set_and_echo_config(&mut network, &config)?;
+   let mut train_data = Vec::new();
+   set_and_echo_config(&mut network, &config, &mut train_data)?;
 
    println!("Network: {:#?}\n", network);
-
-   let test_cases = [((0, 0), 0), ((0, 1), 1), ((1, 0), 1), ((1, 1), 0)];
-   let feed_case = |network: &mut NeuralNetwork, case: (i32, i32)| {
-      network.get_inputs()[0] = case.0 as NumT;
-      network.get_inputs()[1] = case.1 as NumT;
-
-      network.feed_forward();
-   };
 
    if network.do_training
    {
@@ -36,10 +30,11 @@ fn main() -> Result<(), Box<dyn Error>>
       for iteration in 0..network.max_iters
       {
          loss = 0 as NumT;
-         for (inp, expect_out) in test_cases
+         for case in &train_data
          {
-            feed_case(&mut network, inp);
-            loss += network.feed_backwards(&[expect_out as NumT]);
+            network.get_inputs().copy_from_slice(&*case.inp);
+            network.feed_forward();
+            loss += network.feed_backwards(&*case.outp);
          }
 
          if iteration % network.printout_period == 0
@@ -57,11 +52,17 @@ fn main() -> Result<(), Box<dyn Error>>
    }
 
    println!("Truth table");
-   for (inp, _) in test_cases
+   let mut loss = 0 as NumT;
+   for case in &train_data
    {
-      feed_case(&mut network, inp);
-      println!("network {:?} = {:?}", inp, network.get_outputs());
+      network.get_inputs().copy_from_slice(&*case.inp);
+      network.feed_forward();
+      loss += network.feed_backwards(&*case.outp);
+
+      println!("network {:?} = {:?} (expected {:?})", case.inp, network.get_outputs(), case.outp);
    }
+
+   println!("final loss: {}", loss);
 
    expect_config!(
       Some(Text(filename)),
@@ -69,7 +70,7 @@ fn main() -> Result<(), Box<dyn Error>>
       write_net_to_file(&network, filename.as_str())?
    );
 
-   println!("network: {:#?}", network);
+   // println!("network: {:#?}", network);
 
    Ok(())
 } // fn main() -> Result<(), io::Error>

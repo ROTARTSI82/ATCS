@@ -1,6 +1,13 @@
 use crate::config::{ident, ident_deriv, FuncT, NumT};
 
 #[derive(Debug)]
+pub struct TrainCase
+{
+   pub inp: Box<[NumT]>,
+   pub outp: Box<[NumT]>,
+}
+
+#[derive(Debug)]
 pub struct NeuralNetwork
 {
    pub layers: Box<[NetworkLayer]>,
@@ -94,7 +101,7 @@ impl NetworkLayer
       assert_eq!(outp.len(), self.num_outputs as usize);
       assert_eq!(inp.len(), self.num_inputs as usize);
 
-      const MAGN_FACTOR: NumT = 1e-5;
+      const MAGN_FACTOR: NumT = 0 as NumT;
 
       dest_deriv_wrt_inp.fill(0 as NumT);
       for (out_it, act) in outp.iter().enumerate()
@@ -112,6 +119,7 @@ impl NetworkLayer
          }
 
          self.biases[out_it] += deriv_wrt_inner * learn_rate - MAGN_FACTOR * self.biases[out_it];
+         // self.biases[out_it] = 0 as NumT;
       }
    }
 }
