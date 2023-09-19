@@ -25,7 +25,7 @@ pub struct NeuralNetwork
    pub do_training: bool,
 
    pub printout_period: i32,
-}
+} // pub struct NeuralNetwork
 
 #[derive(Debug)]
 pub struct NetworkLayer
@@ -49,34 +49,25 @@ impl NetworkLayer
       }
    }
 
-   pub fn get_weight_mut(&mut self, row: i32, col: i32) -> &mut NumT
+   pub fn get_weight_mut(&mut self, inp_index: i32, out_index: i32) -> &mut NumT
    {
-      assert!(
-         row < self.num_inputs && col < self.num_outputs,
-         "out of bounds access to weights"
-      );
-      &mut self.weights[(row * self.num_outputs + col) as usize]
+      assert!(inp_index < self.num_inputs && out_index < self.num_outputs);
+      &mut self.weights[(inp_index * self.num_outputs + out_index) as usize]
    }
 
-   pub fn get_weight(&self, row: i32, col: i32) -> &NumT
+   pub fn get_weight(&self, inp_index: i32, out_index: i32) -> &NumT
    {
-      assert!(
-         row < self.num_inputs && col < self.num_outputs,
-         "out of bounds access to weights"
-      );
-      &self.weights[(row * self.num_outputs + col) as usize]
+      assert!(inp_index < self.num_inputs && out_index < self.num_outputs);
+      &self.weights[(inp_index * self.num_outputs + out_index) as usize]
    }
 
+   /**
+    * Feeds the `inp` array forward through this network layer,
+    * using the `act` activation function and outputting into the `out` array.
+    */
    pub fn feed_forward(&self, inp: &[NumT], out: &mut [NumT], act: FuncT)
    {
-      assert!(
-         inp.len() == self.num_inputs as usize && out.len() == self.num_outputs as usize,
-         "unexpected in/out dimensions for neural network layer: expected ({}, {}) got ({}, {})",
-         self.num_inputs,
-         self.num_outputs,
-         inp.len(),
-         out.len()
-      );
+      assert!(inp.len() == self.num_inputs as usize && out.len() == self.num_outputs as usize);
 
       for out_it in 0..self.num_outputs
       {
@@ -86,8 +77,29 @@ impl NetworkLayer
 
          out[out_it as usize] = act(product_part + self.biases[out_it as usize]);
       }
-   }
+   } // pub fn feed_forward(&self, inp: &[NumT], out: &mut [NumT], act: FuncT)
 
+   /**
+    * Performs backpropagation on this network layer.
+    *
+    * `inp` is an array of the original inputs fed into this layer, and `outp`
+    * is this layer's output values during the feed-forward process.
+    *
+    * `learn_rate` is the lambda value, the step size for gradient descent.
+    *
+    * `act_prime` gives the derivative of the threshold function when given
+    * the output value of the threshold function.
+    * Mathematically, it is f'(f^-1(x)) for the activation function f(x).
+    *
+    * `deriv_wrt_outp` is the derivative of the cost function with respect to
+    * this layer's output.
+    *
+    * `dest_deriv_wrt_inp` is the array to output into, where this function will write
+    * the derivative of the cost function with respect to this layer's input. This value
+    * will then be fed into the feed_backwards() function of the previous layer, as
+    * this layer's input is the previous layer's output, so `dest_deriv_wrt_inp`
+    * becomes the new `deriv_wrt_outp` of the previous layer.
+    */
    pub fn feed_backwards(
       &mut self,
       inp: &[NumT],
@@ -101,32 +113,32 @@ impl NetworkLayer
       assert_eq!(outp.len(), self.num_outputs as usize);
       assert_eq!(inp.len(), self.num_inputs as usize);
 
-      const MAGN_FACTOR: NumT = 0 as NumT;
+      const MAGN_FACTOR: NumT = 1 as NumT;
 
       dest_deriv_wrt_inp.fill(0 as NumT);
       for (out_it, act) in outp.iter().enumerate()
       {
-         // dCost/dInner = dCost/dOutput * dOutput/dInner
          let deriv_wrt_inner = deriv_wrt_outp[out_it] * act_prime(*act);
 
          for (in_it, wrt_outer) in dest_deriv_wrt_inp.iter_mut().enumerate()
          {
             *wrt_outer += deriv_wrt_inner * self.get_weight(in_it as i32, out_it as i32);
 
-            *self.get_weight_mut(in_it as i32, out_it as i32) +=
-               deriv_wrt_inner * inp[in_it] * learn_rate
-                  - MAGN_FACTOR * self.get_weight(in_it as i32, out_it as i32);
+            let weight_ptr = self.get_weight_mut(in_it as i32, out_it as i32);
+            *weight_ptr *= MAGN_FACTOR;
+            *weight_ptr += deriv_wrt_inner * inp[in_it] * learn_rate;
          }
 
-         self.biases[out_it] += deriv_wrt_inner * learn_rate - MAGN_FACTOR * self.biases[out_it];
-         // self.biases[out_it] = 0 as NumT;
-      }
-   }
-}
+         self.biases[out_it] *= MAGN_FACTOR;
+         self.biases[out_it] += deriv_wrt_inner * learn_rate;
+         self.biases[out_it] = 0 as NumT;
+      } // for (out_it, act) in outp.iter().enumerate()
+   } // pub fn feed_backwards(...)
+} // impl NetworkLayer
 
 impl NeuralNetwork
 {
-   pub(crate) fn new() -> NeuralNetwork
+   pub fn new() -> NeuralNetwork
    {
       NeuralNetwork {
          layers: Box::new([]),
@@ -141,15 +153,25 @@ impl NeuralNetwork
          err_threshold: 0 as NumT,
          do_training: false,
          printout_period: 0,
-      }
+      } // NeuralNetwork
+   } // pub fn new() -> NeuralNetwork
+
+   pub fn get_inputs(&mut self) -> &mut [NumT]
+   {
+      &mut self.activations[0]
    }
 
-   pub(crate) fn get_outputs(&self) -> &[NumT]
+   pub fn get_outputs(&self) -> &[NumT]
    {
       &self.activations[self.activations.len() - 1]
    }
 
-   pub(crate) fn feed_forward(&mut self)
+   /**
+    * Runs the full neural network forwards.
+    * The inputs into the network should be written into the array returned by
+    * get_inputs(), and the outputs can be read from the array returned by get_outputs().
+    */
+   pub fn feed_forward(&mut self)
    {
       for (index, layer) in self.layers.iter().enumerate()
       {
@@ -160,23 +182,22 @@ impl NeuralNetwork
             self.threshold_func,
          );
       }
-   }
+   } // pub fn feed_forward(&mut self)
 
-   pub fn get_inputs(&mut self) -> &mut [NumT]
-   {
-      &mut self.activations[0]
-   }
-
-   // returns the loss function for this test case
+   /**
+    * Runs backpropagation through the full neural network.
+    * The `expected_out` is the expected output array of the network and is
+    * used to compute the cost function and gradient.
+    * This function returns the value of the cost function on this particular
+    * training case.
+    */
    pub fn feed_backwards(&mut self, expected_out: &[NumT]) -> NumT
    {
       assert_eq!(expected_out.len(), self.get_outputs().len());
 
       let mut cost = 0 as NumT;
-      // println!("got {:?} expected {:?}", self.get_outputs(), expected_out);
       for (idx, expected) in expected_out.iter().enumerate()
       {
-         // i've messed up a minus sign somewhere, this somehow is what i need to do??
          let diff = expected - self.get_outputs()[idx];
          cost += 0.5 * diff * diff;
          self.derivs[0][idx] = diff;
@@ -198,5 +219,5 @@ impl NeuralNetwork
       }
 
       cost
-   }
+   } // pub fn feed_backwards(&mut self, expected_out: &[NumT]) -> NumT
 } // impl NeuralNetwork

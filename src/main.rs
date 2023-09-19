@@ -12,6 +12,73 @@ use crate::config::{make_err, parse_config, set_and_echo_config, NumT};
 use crate::serialize::write_net_to_file;
 use std::error::Error;
 
+/**
+ * Runs training on a neural network with the specified data.
+ * Configuration parameters for maximum number of iterations, error thresholds, etc. are
+ * loaded from the configuration file and stored in the NeuralNetwork struct itself.
+ */
+fn train_network(network: &mut NeuralNetwork, train_data: &Vec<TrainCase>)
+{
+   let mut loss = 0 as NumT;
+   let mut iteration = 0;
+
+   while iteration < network.max_iters && loss < network.err_threshold
+   {
+      loss = 0 as NumT;
+
+      for case in train_data
+      {
+         network.get_inputs().copy_from_slice(&*case.inp);
+         network.feed_forward();
+         loss += network.feed_backwards(&*case.outp);
+      }
+
+      if iteration % network.printout_period == 0
+      {
+         println!("loss={:.6}\tλ={:.6}\tit={}", loss, network.learn_rate, iteration);
+      }
+
+      iteration += 1;
+   } // for iteration in 0..network.max_iters
+
+   println!("\nTerminated training after {}/{} iterations", iteration, network.max_iters);
+   println!("loss={:.6}, threshold={:.6}", loss, network.err_threshold);
+   if loss < network.err_threshold
+   {
+      println!("\t+ Met error threshold");
+   }
+
+   if iteration == network.max_iters
+   {
+      println!("\t+ Reached maximum number of iterations");
+   }
+} // fn train_network(network: &mut NeuralNetwork, train_data: &Vec<TrainCase>)
+
+/**
+ * Prints the truth table of the neural network based on the training data.
+ * For each training case, it outputs the case, the network's output, and the expected output.
+ */
+fn print_truth_table(network: &mut NeuralNetwork, train_data: &Vec<TrainCase>)
+{
+   println!("\nTruth table");
+   let mut loss = 0 as NumT;
+   for case in train_data
+   {
+      network.get_inputs().copy_from_slice(&*case.inp);
+      network.feed_forward();
+      loss += network.feed_backwards(&*case.outp);
+
+      println!(
+         "network {:?} = {:?} (expected {:?})",
+         case.inp,
+         network.get_outputs(),
+         case.outp
+      );
+   } // for case in train_data
+
+   println!("final loss: {}\n", loss);
+} // fn print_truth_table(network: &mut Network, train_data: &Vec<TrainCase>)
+
 fn main() -> Result<(), Box<dyn Error>>
 {
    let args: Vec<_> = std::env::args().collect();
@@ -22,55 +89,18 @@ fn main() -> Result<(), Box<dyn Error>>
    let mut train_data = Vec::new();
    set_and_echo_config(&mut network, &config, &mut train_data)?;
 
-   println!("Network: {:#?}\n", network);
-
    if network.do_training
    {
-      let mut loss = 0 as NumT;
-      for iteration in 0..network.max_iters
-      {
-         loss = 0 as NumT;
-         for case in &train_data
-         {
-            network.get_inputs().copy_from_slice(&*case.inp);
-            network.feed_forward();
-            loss += network.feed_backwards(&*case.outp);
-         }
-
-         if iteration % network.printout_period == 0
-         {
-            println!("loss: {}", loss);
-         }
-
-         if loss < network.err_threshold
-         {
-            break;
-         }
-      }
-
-      println!("loss: {}", loss);
+      train_network(&mut network, &train_data);
    }
 
-   println!("Truth table");
-   let mut loss = 0 as NumT;
-   for case in &train_data
-   {
-      network.get_inputs().copy_from_slice(&*case.inp);
-      network.feed_forward();
-      loss += network.feed_backwards(&*case.outp);
-
-      println!("network {:?} = {:?} (expected {:?})", case.inp, network.get_outputs(), case.outp);
-   }
-
-   println!("final loss: {}", loss);
+   print_truth_table(&mut network, &train_data);
 
    expect_config!(
       Some(Text(filename)),
       config.get("save_file"),
       write_net_to_file(&network, filename.as_str())?
    );
-
-   // println!("network: {:#?}", network);
 
    Ok(())
 } // fn main() -> Result<(), io::Error>

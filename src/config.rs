@@ -1,6 +1,6 @@
 use crate::config::ConfigValue::{Boolean, FloatList, IntList, Integer, Numeric, Text};
 use crate::network::{NetworkLayer, NeuralNetwork, TrainCase};
-use crate::serialize::load_net_from_file;
+use crate::serialize::read_net_from_file;
 use rand::prelude::*;
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -12,11 +12,6 @@ use std::ops::Range;
 pub type NumT = f64;
 pub type FuncT = fn(NumT) -> NumT;
 
-pub fn make_err(msg: &str) -> std::io::Error
-{
-   std::io::Error::new(std::io::ErrorKind::Other, msg)
-}
-
 #[derive(Debug)]
 pub enum ConfigValue
 {
@@ -27,6 +22,15 @@ pub enum ConfigValue
    FloatList(Vec<NumT>),
    Boolean(bool),
 }
+
+const PARAMS_TO_PRINT: [&str; 6] = [
+   "rand_lo",
+   "rand_hi",
+   "network_topology",
+   "max_iterations",
+   "learn_rate",
+   "error_cutoff",
+];
 
 #[macro_export]
 macro_rules! expect_config {
@@ -42,6 +46,11 @@ macro_rules! expect_config {
    };
 }
 
+pub fn make_err(msg: &str) -> std::io::Error
+{
+   std::io::Error::new(std::io::ErrorKind::Other, msg)
+}
+
 /**
  * Initializes the neural network based off of a configuration map
  * read from the configuration file. If the configuration is invalid,
@@ -51,7 +60,7 @@ macro_rules! expect_config {
 pub fn set_and_echo_config(
    net: &mut NeuralNetwork,
    config: &BTreeMap<String, ConfigValue>,
-   train_data: &mut Vec<TrainCase>
+   train_data: &mut Vec<TrainCase>,
 ) -> Result<(), std::io::Error>
 {
    expect_config!(Some(IntList(list)), config.get("network_topology"), {
@@ -117,7 +126,10 @@ pub fn set_and_echo_config(
 
    for (k, v) in config.iter()
    {
-      println!("\t{}: {:?}", k, v);
+      if PARAMS_TO_PRINT.contains(&k.as_str())
+      {
+         println!("\t{}: {:?}", k, v);
+      }
 
       if net.do_training && k.starts_with("case")
       {
@@ -155,10 +167,15 @@ pub fn set_and_echo_config(
          }
       }
    }
+   println!();
 
    Ok(())
 }
 
+/**
+ * Loads the weights into a NeuralNetwork based on the method specified in the
+ * configuration file.
+ */
 fn set_initialization_mode(
    net: &mut NeuralNetwork,
    init_mode: &str,
@@ -181,7 +198,7 @@ fn set_initialization_mode(
          expect_config!(
             Some(Text(filename)),
             config.get("load_file"),
-            load_net_from_file(net, filename.as_str())?
+            read_net_from_file(net, filename.as_str())?
          );
       }
       _ => Err(make_err("invalid 'initialization_mode' in config"))?,
@@ -190,6 +207,10 @@ fn set_initialization_mode(
    Ok(())
 }
 
+/**
+ * Randomizes the weights of all layers in the neural network to uniform random
+ * values in the specified range.
+ */
 fn randomize_network(net: &mut NeuralNetwork, range: Range<NumT>)
 {
    let mut rng = rand::thread_rng();
@@ -205,12 +226,13 @@ fn randomize_network(net: &mut NeuralNetwork, range: Range<NumT>)
          *weight = rng.gen_range(range.clone());
       }
    }
-}
+} // fn randomize_network(net: &mut NeuralNetwork, range: Range<NumT>)
 
 /**
  * Reads/parses the configuration from the specified file name, returning it as
- * Ok(BTreeMap), which maps from String to ConfigValues. I chose
- * to use a Map instead of a fixed struct so that the configuration format
+ * Ok(BTreeMap), which maps from String to ConfigValues.
+ *
+ * I chose to use a Map instead of a fixed struct so that the configuration format
  * is more easily extensible, and I reduce the number of if statements needed
  * to write each value into the correct place. All details about the configuration's
  * structure could thus be extracted from the parsing step into a
