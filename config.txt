@@ -5,7 +5,7 @@ error_cutoff: float 0.002
 # how often to print out training loss (in # of iterations)
 printout_period: int 16000
 
-network_topology: int[2,2,1]
+network_topology: int[2,4,1]
 activation_function: "sigmoid"
 
 initialization_mode: "randomize"
@@ -13,13 +13,14 @@ rand_lo: float -1.5
 rand_hi: float 1.5
 fixed_value: float 1
 
-load_file: "something.txt"
+# load_file is not used with initialization_mode="randomize"
+# load_file: "something.txt"
 save_file: "xor_sigmoid.txt"
 
 learn_rate: float 0.3
 
-training_cases_mode: "truth_table"
-
+# this option isn't implemented yet
+# training_cases_mode: "truth_table"
 case [0,0]: float[0]
 case [0,1]: float[1]
 case [1,0]: float[1]

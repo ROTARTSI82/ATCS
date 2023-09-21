@@ -1,18 +1,39 @@
+/**
+ * serialize.rs
+ * By Grant Yang
+ * Created on 2023.09.05
+ *
+ * Contains two utility functions for serializing and deserializing
+ * full NeuralNetwork weights to a binary file.
+ *
+ * Exports the following functions:
+ * `fn write_net_to_file(net: &NeuralNetwork, filename: &str) -> Result<(), std::io::Error>`
+ * `fn read_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(), std::io::Error>`
+ */
 use crate::config::{make_err, NumT};
 use crate::network::NeuralNetwork;
 use std::fs::File;
 use std::io::{Read, Write};
 
-const MAGIC_FILE_HEADER: &[u8] = b"ATNeuralNetwork";
 const I32_SIZE: usize = std::mem::size_of::<i32>();
 const NUM_SIZE: usize = std::mem::size_of::<NumT>();
+const MAGIC_FILE_HEADER: &[u8] = b"ATNeuralNetwork";
 
 /**
- * Saves a NeuralNetwork to a file in a binary format. On success, returns Ok(()).
- * If there is an error with the file I/O, an Err(io::Error) is returned with
- * the error that occurred.
+ * Saves the NeuralNetwork `net` to a file at `filename` in a binary format.
+ * On success, returns Ok(()). If there is an error with the file I/O,
+ * an Err(io::Error) is returned with the error that occurred.
  *
- * @param net
+ * Here is the packed binary format:
+ * 1. The ASCII bytes b"ATNeuralNetwork" (specified in MAGIC_FILE_HEADER)
+ * 2. The number of layers in the network.  (32-bit big endian integer)
+ * 3. The number of inputs expected by the network. (32-bit big endian integer)
+ * 4. The number of outputs for each layer successively, including the number of outputs
+ *    as the last value. (This field is an array of 32-bit big endian integers)
+ *    The number of values in this field is equal to the value of field #2.
+ * 5. The weights of each layer successively. The format is the same as the format
+ *    of the `NetworkLayer::weights` field. (This field is an array of `NumT` values
+ *    as converted to binary by rust's `to_be_bytes`)
  */
 pub fn write_net_to_file(net: &NeuralNetwork, filename: &str) -> Result<(), std::io::Error>
 {
@@ -36,7 +57,6 @@ pub fn write_net_to_file(net: &NeuralNetwork, filename: &str) -> Result<(), std:
    for layer in net.layers.iter()
    {
       bytes.extend(layer.weights.iter().flat_map(|it| it.to_be_bytes()));
-      bytes.extend(layer.biases.iter().flat_map(|it| it.to_be_bytes()));
    }
 
    let mut file = File::create(filename)?;
@@ -78,6 +98,8 @@ fn consume_num(list: &[u8]) -> Result<NumT, std::io::Error>
  * corrupted/mismatched data between the binary file and the configuration
  * will result in this function returning an Err(io::Error) variant with
  * a message. Otherwise, all data is loaded into the network and Ok(()) is returned.
+ *
+ * Refer to the documentation for `write_net_to_file` for a specification of the binary format.
  */
 pub fn read_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(), std::io::Error>
 {
@@ -157,12 +179,6 @@ pub fn read_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(),
       for weight in layer.weights.iter_mut()
       {
          *weight = consume_num(&bytes[NUM_SIZE * ptr..])?;
-         ptr += 1;
-      }
-
-      for bias in layer.biases.iter_mut()
-      {
-         *bias = consume_num(&bytes[NUM_SIZE * ptr..])?;
          ptr += 1;
       }
    }

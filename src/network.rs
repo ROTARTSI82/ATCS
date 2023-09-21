@@ -1,5 +1,11 @@
+/**
+ * network.rs
+ * By Grant Yang
+ * Created on 2023.09.05
+ */
 use crate::config::{ident, ident_deriv, FuncT, NumT};
 
+/// Training data case with the input and the expected output
 #[derive(Debug)]
 pub struct TrainCase
 {
@@ -7,12 +13,14 @@ pub struct TrainCase
    pub outp: Box<[NumT]>,
 }
 
+/// Neural network, containing both layer weights and configuration data
 #[derive(Debug)]
 pub struct NeuralNetwork
 {
-   pub layers: Box<[NetworkLayer]>,
-   pub activations: Box<[Box<[NumT]>]>,
-   pub derivs: [Box<[NumT]>; 2],
+   pub layers: Box<[NetworkLayer]>, /// See `NetworkLayer`
+
+   pub activations: Box<[Box<[NumT]>]>, ///
+   pub derivs: [Box<[NumT]>; 2], ///
 
    pub threshold_func: FuncT,
    pub threshold_func_deriv: FuncT,
@@ -31,34 +39,61 @@ pub struct NeuralNetwork
 pub struct NetworkLayer
 {
    pub weights: Box<[NumT]>,
-   pub biases: Box<[NumT]>,
+   pub delta_weights: Box<[NumT]>,
 
    pub num_inputs: i32,
    pub num_outputs: i32,
 }
 
+const INPUT_DERIV: usize = 0;
+const OUTPUT_DERIV: usize = 1;
+
 impl NetworkLayer
 {
-   pub fn new(num_inputs: i32, num_outputs: i32) -> NetworkLayer
+   /// Allocates memory for a neural network layer according to the dimensions
+   /// of the inputs and outputs. If `train` is true, this function allocates `delta_weights` too.
+   pub fn new(num_inputs: i32, num_outputs: i32, train: bool) -> NetworkLayer
    {
+      let delta_weights = if train
+      {
+         vec![0 as NumT; (num_inputs * num_outputs) as usize].into_boxed_slice()
+      }
+      else
+      {
+         Box::new([])
+      };
+
       NetworkLayer {
          num_inputs,
          num_outputs,
          weights: vec![0 as NumT; (num_inputs * num_outputs) as usize].into_boxed_slice(),
-         biases: vec![0 as NumT; num_outputs as usize].into_boxed_slice(),
+         delta_weights,
       }
    }
 
-   pub fn get_weight_mut(&mut self, inp_index: i32, out_index: i32) -> &mut NumT
+   /**
+    * The following functions, `get_weight_mut`, `get_delta_weight_mut`, and `get_weight`
+    * are used for indexing into the arrays for constant and mutable values.
+    * These make code easier since I used flattened weight arrays. Instead of using a 2d
+    * array to store the weight matrices, I used 1d arrays in row-major order.
+    */
+
+   pub fn get_weight_mut(&mut self, inp_index: usize, out_index: usize) -> &mut NumT
    {
-      assert!(inp_index < self.num_inputs && out_index < self.num_outputs);
-      &mut self.weights[(inp_index * self.num_outputs + out_index) as usize]
+      assert!(inp_index < self.num_inputs as usize && out_index < self.num_outputs as usize);
+      &mut self.weights[inp_index * self.num_outputs as usize + out_index]
    }
 
-   pub fn get_weight(&self, inp_index: i32, out_index: i32) -> &NumT
+   pub fn get_delta_weight_mut(&mut self, inp_index: usize, out_index: usize) -> &mut NumT
    {
-      assert!(inp_index < self.num_inputs && out_index < self.num_outputs);
-      &self.weights[(inp_index * self.num_outputs + out_index) as usize]
+      assert!(inp_index < self.num_inputs as usize && out_index < self.num_outputs as usize);
+      &mut self.delta_weights[inp_index * self.num_outputs as usize + out_index]
+   }
+
+   pub fn get_weight(&self, inp_index: usize, out_index: usize) -> &NumT
+   {
+      assert!(inp_index < self.num_inputs as usize && out_index < self.num_outputs as usize);
+      &self.weights[inp_index * self.num_outputs as usize + out_index]
    }
 
    /**
@@ -69,13 +104,13 @@ impl NetworkLayer
    {
       assert!(inp.len() == self.num_inputs as usize && out.len() == self.num_outputs as usize);
 
-      for out_it in 0..self.num_outputs
+      for out_it in 0..self.num_outputs as usize
       {
-         let product_part = (0..self.num_inputs)
-            .map(|in_it| self.get_weight(in_it, out_it) * inp[in_it as usize])
+         let product_part = (0..self.num_inputs as usize)
+            .map(|in_it| self.get_weight(in_it, out_it) * inp[in_it])
             .sum::<NumT>();
 
-         out[out_it as usize] = act(product_part + self.biases[out_it as usize]);
+         out[out_it] = act(product_part);
       }
    } // pub fn feed_forward(&self, inp: &[NumT], out: &mut [NumT], act: FuncT)
 
@@ -113,8 +148,6 @@ impl NetworkLayer
       assert_eq!(outp.len(), self.num_outputs as usize);
       assert_eq!(inp.len(), self.num_inputs as usize);
 
-      const MAGN_FACTOR: NumT = 1 as NumT;
-
       dest_deriv_wrt_inp.fill(0 as NumT);
       for (out_it, act) in outp.iter().enumerate()
       {
@@ -122,25 +155,31 @@ impl NetworkLayer
 
          for (in_it, wrt_outer) in dest_deriv_wrt_inp.iter_mut().enumerate()
          {
-            *wrt_outer += deriv_wrt_inner * self.get_weight(in_it as i32, out_it as i32);
+            *wrt_outer += deriv_wrt_inner * self.get_weight(in_it, out_it);
 
-            let weight_ptr = self.get_weight_mut(in_it as i32, out_it as i32);
-            *weight_ptr *= MAGN_FACTOR;
-            *weight_ptr += deriv_wrt_inner * inp[in_it] * learn_rate;
+            *self.get_delta_weight_mut(in_it, out_it) += deriv_wrt_inner * inp[in_it] * learn_rate;
          }
-
-         self.biases[out_it] *= MAGN_FACTOR;
-         self.biases[out_it] += deriv_wrt_inner * learn_rate;
-         self.biases[out_it] = 0 as NumT;
       } // for (out_it, act) in outp.iter().enumerate()
    } // pub fn feed_backwards(...)
+
+
+   pub fn apply_delta_weights(&mut self)
+   {
+      for (weight, delta) in self.weights.iter_mut().zip(self.delta_weights.iter())
+      {
+         *weight += delta;
+      }
+
+      self.delta_weights.fill(0 as NumT);
+   }
 } // impl NetworkLayer
 
 impl NeuralNetwork
 {
    pub fn new() -> NeuralNetwork
    {
-      NeuralNetwork {
+      NeuralNetwork
+      {
          layers: Box::new([]),
          activations: Box::new([]),
          threshold_func: ident,
@@ -156,11 +195,13 @@ impl NeuralNetwork
       } // NeuralNetwork
    } // pub fn new() -> NeuralNetwork
 
+   /// Gets a mutable reference to the input array of the network
    pub fn get_inputs(&mut self) -> &mut [NumT]
    {
       &mut self.activations[0]
    }
 
+   /// Gets the output array of the network. `feed_forward` will write its output here.
    pub fn get_outputs(&self) -> &[NumT]
    {
       &self.activations[self.activations.len() - 1]
@@ -195,29 +236,39 @@ impl NeuralNetwork
    {
       assert_eq!(expected_out.len(), self.get_outputs().len());
 
-      let mut cost = 0 as NumT;
-      for (idx, expected) in expected_out.iter().enumerate()
-      {
-         let diff = expected - self.get_outputs()[idx];
-         cost += 0.5 * diff * diff;
-         self.derivs[0][idx] = diff;
-      }
+      let diff = expected_out[0] - self.get_outputs()[0];
+      let mut cost = 0.5 * diff * diff;
+      self.derivs[INPUT_DERIV][0] = diff;
 
       for (index, layer) in self.layers.iter_mut().enumerate().rev()
       {
-         let (first, second) = self.derivs.split_at_mut(1);
-         let (inp_slice, outp_slice) = self.activations.split_at(index + 1);
+         // rust cannot let us borrow 2 values from a single array at the same time,
+         // so we have to use this hack to appease the borrow checker
+         let (inp_deriv, outp_deriv) = self.derivs.split_at_mut(1);
+         let (inp_act, outp_act) = self.activations.split_at(index + 1);
+
          layer.feed_backwards(
-            &inp_slice[index],
-            &outp_slice[0],
+            &inp_act[index],
+            &outp_act[0],
             self.learn_rate,
             self.threshold_func_deriv,
-            &first[0][..layer.num_outputs as usize],
-            &mut second[0][..layer.num_inputs as usize],
+            &inp_deriv[0][..layer.num_outputs as usize],
+            &mut outp_deriv[0][..layer.num_inputs as usize],
          );
-         self.derivs.swap(0, 1);
+
+         self.derivs.swap(INPUT_DERIV, OUTPUT_DERIV);
       }
 
       cost
    } // pub fn feed_backwards(&mut self, expected_out: &[NumT]) -> NumT
+
+   /// Changes the weights throughout the network according to the stored deltas,
+   /// and then clears the deltas to zero for the next backpropagation step.
+   pub fn apply_delta_weights(&mut self)
+   {
+      for layer in self.layers.iter_mut()
+      {
+         layer.apply_delta_weights();
+      }
+   }
 } // impl NeuralNetwork

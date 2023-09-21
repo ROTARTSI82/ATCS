@@ -1,3 +1,9 @@
+/**
+ * config.rs
+ * By Grant Yang
+ * Created on 2023.09.05
+ *
+ */
 use crate::config::ConfigValue::{Boolean, FloatList, IntList, Integer, Numeric, Text};
 use crate::network::{NetworkLayer, NeuralNetwork, TrainCase};
 use crate::serialize::read_net_from_file;
@@ -12,6 +18,8 @@ use std::ops::Range;
 pub type NumT = f64;
 pub type FuncT = fn(NumT) -> NumT;
 
+/// A union of the possible values contained in the configuration file.
+/// This type is used to store the configuration in a key:value map.
 #[derive(Debug)]
 pub enum ConfigValue
 {
@@ -23,6 +31,8 @@ pub enum ConfigValue
    Boolean(bool),
 }
 
+/// These are the parameters of the configuration that are printed out
+/// before running the network.
 const PARAMS_TO_PRINT: [&str; 6] = [
    "rand_lo",
    "rand_hi",
@@ -32,6 +42,14 @@ const PARAMS_TO_PRINT: [&str; 6] = [
    "error_cutoff",
 ];
 
+/**
+ * This macro attempts to unwrap a certain value (specified by the expression `str_name`)
+ * from the configuration according to the pattern specified by `name`.
+ * An error with a helpful message if unwrapping fails, and if it is successful,
+ * the code in `body` is executed.
+ *
+ * For examples, see usages in `set_and_echo_config`
+ */
 #[macro_export]
 macro_rules! expect_config {
    ($name: pat, $str_name: expr, $body: expr) => {
@@ -46,6 +64,8 @@ macro_rules! expect_config {
    };
 }
 
+/// Utility method for quickly constructing an Error object from a string message.
+#[inline]
 pub fn make_err(msg: &str) -> std::io::Error
 {
    std::io::Error::new(std::io::ErrorKind::Other, msg)
@@ -53,9 +73,12 @@ pub fn make_err(msg: &str) -> std::io::Error
 
 /**
  * Initializes the neural network based off of a configuration map
- * read from the configuration file. If the configuration is invalid,
- * this function will return an Err(std::io::Error) with a message explaining
- * the problem. Otherwise, it will return Ok(()) and set up the network.
+ * and loads training data into the specified vector.
+ *
+ * If the configuration is invalid, this function will return an Err(std::io::Error)
+ * with a message explaining the problem. Otherwise, it will return Ok(()) and set up the network.
+ *
+ * Refer to the documentation of `parse_config` for the syntax of the configuration format.
  */
 pub fn set_and_echo_config(
    net: &mut NeuralNetwork,
@@ -63,9 +86,15 @@ pub fn set_and_echo_config(
    train_data: &mut Vec<TrainCase>,
 ) -> Result<(), std::io::Error>
 {
+   expect_config!(
+      Some(Boolean(train)),
+      config.get("do_training"),
+      net.do_training = *train
+   );
+
    expect_config!(Some(IntList(list)), config.get("network_topology"), {
       net.layers = (0..list.len() - 1)
-         .map(|it| NetworkLayer::new(list[it], list[it + 1]))
+         .map(|it| NetworkLayer::new(list[it], list[it + 1], net.do_training))
          .collect();
       net.activations = list
          .iter()
@@ -118,12 +147,6 @@ pub fn set_and_echo_config(
       net.err_threshold = *cutoff
    );
 
-   expect_config!(
-      Some(Boolean(train)),
-      config.get("do_training"),
-      net.do_training = *train
-   );
-
    for (k, v) in config.iter()
    {
       if PARAMS_TO_PRINT.contains(&k.as_str())
@@ -173,8 +196,12 @@ pub fn set_and_echo_config(
 }
 
 /**
- * Loads the weights into a NeuralNetwork based on the method specified in the
- * configuration file.
+ * Loads the weights into a NeuralNetwork based on the method specified by `init_mode`
+ * and the additional data in the `config` map.
+ *
+ * This function supports loading weights from a binary file, or setting them to
+ * uniform random values within a specified range (in `config`).
+ * Currently, setting the network weights to a fixed value is not implemented.
  */
 fn set_initialization_mode(
    net: &mut NeuralNetwork,
@@ -216,11 +243,6 @@ fn randomize_network(net: &mut NeuralNetwork, range: Range<NumT>)
    let mut rng = rand::thread_rng();
    for layer in net.layers.iter_mut()
    {
-      for bias in layer.biases.iter_mut()
-      {
-         *bias = rng.gen_range(range.clone());
-      }
-
       for weight in layer.weights.iter_mut()
       {
          *weight = rng.gen_range(range.clone());
@@ -231,6 +253,18 @@ fn randomize_network(net: &mut NeuralNetwork, range: Range<NumT>)
 /**
  * Reads/parses the configuration from the specified file name, returning it as
  * Ok(BTreeMap), which maps from String to ConfigValues.
+ *
+ * Lines starting with '#' are ignored as comments, as are blank lines.
+ * Every other line should be a key-value pair seperated by a colon ("key: value").
+ * Keys can be any string that does not contain a colon, and values can be
+ * the types supported by `ConfigValue`.
+ *
+ * `Text` values are written as `"Hello World!"`. No escape sequences are implemented.
+ * `IntList` values are written as `int[1,2]`
+ * `FloatList` values are written as `float[1,2]`. Rust parsing is used, so e-notation is supported.
+ * `Integer` values are written as `int 1`
+ * `Numeric` values are written as `float 3.14`. Again, e-notation is supported with rust parsing.
+ * `Boolean` values are either `true` or `false`
  *
  * I chose to use a Map instead of a fixed struct so that the configuration format
  * is more easily extensible, and I reduce the number of if statements needed
@@ -316,6 +350,15 @@ pub fn parse_config(filename: &str) -> Result<BTreeMap<String, ConfigValue>, std
    Ok(map)
 } // fn load_config(&str) -> Result<HashMap<String, ConfigValue>, io::Error>
 
+/**
+ * These are the supported activation functions along with their derivatives:
+ * The identity function, hyperbolic tangent, and logistic sigmoid.
+ *
+ * The `_deriv` functions take the output value of their corresponding functions
+ * and return the derivative of that function. Mathematically, if the original function
+ * is f(x), then the `_deriv` function is f'(f^-1(x))
+ */
+
 pub fn ident(x: NumT) -> NumT
 {
    x
@@ -323,17 +366,17 @@ pub fn ident(x: NumT) -> NumT
 
 pub fn ident_deriv(_: NumT) -> NumT
 {
-   1 as NumT
+   1.0f64
 }
 
 fn sigmoid(x: NumT) -> NumT
 {
-   1 as NumT / (1 as NumT + (-x).exp())
+   1.0f64 / (1.0f64 + (-x).exp())
 }
 
 fn sigmoid_deriv(x: NumT) -> NumT
 {
-   x * (1 as NumT - x)
+   x * (1.0f64 - x)
 }
 
 fn tanh(x: NumT) -> NumT
@@ -344,5 +387,5 @@ fn tanh(x: NumT) -> NumT
 fn tanh_deriv(x: NumT) -> NumT
 {
    // tanh'(x) = sech(x)^2 = 1 - tanh(x)^2
-   1 as NumT - x * x
+   1.0f64 - x * x
 }
