@@ -13,43 +13,39 @@
  * for more info about the configuration format.
  */
 mod config;
-mod convolve;
 mod network;
 mod serialize;
 
-use crate::network::{NeuralNetwork, TrainCase};
-
 extern crate core;
 
-use crate::config::ConfigValue::Text;
-use crate::config::{
-   load_dataset_from_config_txt, make_err, parse_config, set_and_echo_config, NumT,
-};
-use crate::serialize::write_net_to_file;
 use std::error::Error;
+use crate::config::*;
+use crate::config::ConfigValue::Text;
+use crate::serialize::write_net_to_file;
+use crate::network::{Datapoint, NeuralNetwork};
 
 /**
- * Runs training on a neural network with the specified `train_data`.
+ * Runs training on a neural network with the specified `dataset`.
  * Configuration parameters for maximum number of iterations, error thresholds, etc. are
  * loaded from the configuration file and stored in the NeuralNetwork struct itself.
  *
  * Keepalive messages will be printed at fixed intervals with loss and learning rate.
  * On exit, summary information about the training session is printed to the console.
  */
-fn train_network(network: &mut NeuralNetwork, train_data: &Vec<TrainCase>)
+fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
 {
    let mut loss = network.error_cutoff;
    let mut iteration = 0;
 
    while iteration < network.max_iterations && loss >= network.error_cutoff
    {
-      loss = 0 as NumT;
+      loss = 0.0;
 
-      for case in train_data
+      for case in dataset
       {
-         network.get_inputs().copy_from_slice(&*case.inputs);
+         network.get_inputs().copy_from_slice(&case.inputs);
          network.feed_forward();
-         loss += network.feed_backwards(&*case.expected_outputs);
+         loss += network.feed_backward(&case.expected_outputs);
          network.apply_delta_weights();
       }
 
@@ -62,7 +58,7 @@ fn train_network(network: &mut NeuralNetwork, train_data: &Vec<TrainCase>)
       }
 
       iteration += 1;
-   } // for iteration in 0..network.max_iterations
+   } // while iteration < network.max_iterations && loss >= network.error_cutoff
 
    println!(
       "\nTerminated training after {}/{} iterations",
@@ -80,21 +76,21 @@ fn train_network(network: &mut NeuralNetwork, train_data: &Vec<TrainCase>)
    {
       println!("\t+ Reached maximum number of iterations");
    }
-} // fn train_network(network: &mut NeuralNetwork, train_data: &Vec<TrainCase>)
+} // fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
 
 /**
  * Prints the truth table of the neural network based on the training data.
  * For each training case, it outputs the case, the network's output, and the expected output.
  */
-fn print_truth_table(network: &mut NeuralNetwork, train_data: &Vec<TrainCase>)
+fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
 {
    println!("\nTruth table");
-   let mut loss = 0 as NumT;
-   for case in train_data
+   let mut loss = 0.0;
+   for case in dataset
    {
-      network.get_inputs().copy_from_slice(&*case.inputs);
+      network.get_inputs().copy_from_slice(&case.inputs);
       network.feed_forward();
-      loss += network.feed_backwards(&*case.expected_outputs);
+      loss += network.feed_backward(&case.expected_outputs);
 
       println!(
          "network {:?} = {:?} (expected {:?})",
@@ -102,10 +98,10 @@ fn print_truth_table(network: &mut NeuralNetwork, train_data: &Vec<TrainCase>)
          network.get_outputs(),
          case.expected_outputs
       );
-   } // for case in train_data
+   } // for case in dataset
 
    println!("final loss: {}\n", loss);
-} // fn print_truth_table(network: &mut Network, train_data: &Vec<TrainCase>)
+} // fn print_truth_table(network: &mut Network, dataset: &Vec<Datapoint>)
 
 /**
  * Runs/trains a network according to the configuration file

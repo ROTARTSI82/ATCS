@@ -3,21 +3,30 @@
  * By Grant Yang
  * Created on 2023.09.05
  *
+ * Defines the NeuralNetwork struct and the methods to
+ * run the network and perform backpropagation.
  *
+ * The `NetworkLayer` and `NeuralNetwork` structs implement the functions
+ * `feed_forward` to run on an input, `feed_backward` to perform backpropagation,
+ * and `apply_delta_weights` to run gradient descent by applying
+ * the changes calculated in backpropagation.
+ *
+ * This file also defines the `Datapoint` struct for testing and training data.
  */
 use crate::config::{ident, ident_deriv, FuncT, NumT};
 
 /**
  * These are array indices into `NeuralNetwork::activations`,
  * specifying where to read from and where to write to during the
- * backpropagation step. See `NeuralNetwork::feed_backwards` and `NetworkLayer::feed_backwards`
+ * backpropagation step. See `NeuralNetwork::feed_backward` and `NetworkLayer::feed_backward`
  */
 const INPUT_DERIV: usize = 0;
 const OUTPUT_DERIV: usize = 1;
 
-/// Training data case with the input and the expected output
+/// A datapoint in the dataset with an input value and
+/// (optionally for training) the expected output. Used for test and train data.
 #[derive(Debug)]
-pub struct TrainCase
+pub struct Datapoint
 {
    pub inputs: Box<[NumT]>,
    pub expected_outputs: Box<[NumT]>,
@@ -74,6 +83,7 @@ pub struct NeuralNetwork
 #[derive(Debug)]
 pub struct NetworkLayer
 {
+   /// The weights and delta_weights matrices are flattened stored in row-major order.
    pub weights: Box<[NumT]>,
    pub delta_weights: Box<[NumT]>,
 
@@ -95,37 +105,31 @@ impl NetworkLayer
    {
       let delta_weights = if do_training
       {
-         vec![0 as NumT; (num_inputs * num_outputs) as usize].into_boxed_slice()
+         vec![0.0; (num_inputs * num_outputs) as usize].into_boxed_slice()
       }
       else
       {
          Box::new([])
       };
 
-      NetworkLayer {
+      NetworkLayer
+      {
          num_inputs,
          num_outputs,
-         weights: vec![0 as NumT; (num_inputs * num_outputs) as usize].into_boxed_slice(),
+         weights: vec![0.0; (num_inputs * num_outputs) as usize].into_boxed_slice(),
          delta_weights,
       }
-   }
+   } // fn new(num_inputs: i32, num_outputs: i32, do_training: bool) -> NetworkLayer
 
    /**
-    * The following functions, `get_weight_mut`, `get_delta_weight_mut`, and `get_weight`
-    * are used for indexing into the arrays for constant and mutable values.
+    * The following functions, `get_delta_weight_mut` and `get_weight`,
+    * are used for indexing into the weight and delta weight matrices.
     * These make code easier since I used flattened weight arrays. Instead of using a 2d
     * array to store the weight matrices, I used 1d arrays in row-major order.
     *
     * All of these functions have the precondition of 0 <= `inp_index` < `self.num_inputs`
     * and 0 <= `out_index` < `self.num_outputs`.
     */
-
-   pub fn get_weight_mut(&mut self, inp_index: usize, out_index: usize) -> &mut NumT
-   {
-      assert!(inp_index < self.num_inputs as usize && out_index < self.num_outputs as usize);
-      &mut self.weights[inp_index * self.num_outputs as usize + out_index]
-   }
-
    pub fn get_delta_weight_mut(&mut self, inp_index: usize, out_index: usize) -> &mut NumT
    {
       assert!(inp_index < self.num_inputs as usize && out_index < self.num_outputs as usize);
@@ -146,20 +150,19 @@ impl NetworkLayer
     * Precondition: `inp_act_arr` must have length equal to `self.num_inputs`
     * and `dest_h_out` must have length equal to `self.num_outputs`.
     */
-   pub fn feed_forward(&self, inp_act_arr: &[NumT], dest_h_out: &mut [NumT], threshold_func: FuncT)
+   pub fn feed_forward(&self, inp_act_arr: &[NumT],
+                       dest_h_out_arr: &mut [NumT], threshold_func: FuncT)
    {
-      assert!(
-         inp_act_arr.len() == self.num_inputs as usize
-            && dest_h_out.len() == self.num_outputs as usize
-      );
+      assert_eq!(inp_act_arr.len(), self.num_inputs as usize);
+      assert_eq!(dest_h_out_arr.len(), self.num_outputs as usize);
 
-      for out_it in 0..self.num_outputs as usize
+      for (out_it, dest_h_out) in dest_h_out_arr.iter_mut().enumerate()
       {
          let theta = (0..self.num_inputs as usize)
             .map(|in_it| self.get_weight(in_it, out_it) * inp_act_arr[in_it])
             .sum::<NumT>();
 
-         dest_h_out[out_it] = threshold_func(theta);
+         *dest_h_out = threshold_func(theta);
       }
    } // pub fn feed_forward(&self, inp: &[NumT], out: &mut [NumT], act: FuncT)
 
@@ -184,26 +187,20 @@ impl NetworkLayer
     * `dest_deriv_wrt_inp` is an array to output into, where this function will write
     * the derivative of the cost function with respect to each of this layer's inputs.
     * Its length MUST be equal to `self.num_inputs`.
-    * This value will then be fed into the `feed_backwards` function of the previous layer.
+    * This value will then be fed into the `feed_backward` function of the previous layer.
     * This layer's input is the previous layer's output, so this layer's `dest_deriv_wrt_inp`
     * becomes the new `deriv_wrt_outp` of the previous layer.
     */
-   pub fn feed_backwards(
-      &mut self,
-      inp_acts_arr: &[NumT],
-      out_acts_arr: &[NumT],
-      learn_rate: NumT,
-      threshold_func_prime: FuncT,
-      deriv_wrt_out: &[NumT],
-      dest_deriv_wrt_inp: &mut [NumT],
-   )
+   pub fn feed_backward(&mut self, inp_acts_arr: &[NumT], out_acts_arr: &[NumT],
+                        learn_rate: NumT, threshold_func_prime: FuncT, deriv_wrt_out: &[NumT],
+                        dest_deriv_wrt_inp: &mut [NumT])
    {
       assert_eq!(out_acts_arr.len(), self.num_outputs as usize);
       assert_eq!(inp_acts_arr.len(), self.num_inputs as usize);
       assert_eq!(deriv_wrt_out.len(), self.num_outputs as usize);
       assert_eq!(dest_deriv_wrt_inp.len(), self.num_inputs as usize);
 
-      dest_deriv_wrt_inp.fill(0 as NumT);
+      dest_deriv_wrt_inp.fill(0.0);
       for (out_it, out_act) in out_acts_arr.iter().enumerate()
       {
          let psi = deriv_wrt_out[out_it] * threshold_func_prime(*out_act);
@@ -215,8 +212,8 @@ impl NetworkLayer
             let deriv_err_wrt_weight = -inp_acts_arr[in_it] * psi;
             *self.get_delta_weight_mut(in_it, out_it) = -learn_rate * deriv_err_wrt_weight;
          }
-      } // for (out_it, act) in outp.iter().enumerate()
-   } // pub fn feed_backwards(...)
+      } // for (out_it, out_act) in out_acts_arr.iter().enumerate()
+   } // pub fn feed_backward(...)
 
    /// Changes the weights throughout the network according to the stored deltas,
    /// and then clears the deltas to zero for the next backpropagation step.
@@ -227,7 +224,7 @@ impl NetworkLayer
          *weight += delta;
       }
 
-      self.delta_weights.fill(0.0f64);
+      self.delta_weights.fill(0.0);
    }
 } // impl NetworkLayer
 
@@ -241,16 +238,17 @@ impl NeuralNetwork
     */
    pub fn new() -> NeuralNetwork
    {
-      NeuralNetwork {
+      NeuralNetwork
+      {
          layers: Box::new([]),
          activations: Box::new([]),
          threshold_func: ident,
          threshold_func_deriv: ident_deriv,
-         learn_rate: 1 as NumT,
+         learn_rate: 1.0,
          derivs: [Box::new([]), Box::new([])],
 
          max_iterations: 0,
-         error_cutoff: 0 as NumT,
+         error_cutoff: 0.0,
          do_training: false,
          printout_period: 0,
       } // NeuralNetwork
@@ -279,52 +277,60 @@ impl NeuralNetwork
    {
       for (index, layer) in self.layers.iter().enumerate()
       {
+         // hack to appease the borrow checker. see note in `NeuralNetwork::feed_forward`.
          let (input_slice, output_slice) = self.activations.split_at_mut(index + 1);
-         layer.feed_forward(
-            &input_slice[index],
-            &mut output_slice[0],
-            self.threshold_func,
-         );
+
+         let input_arr = &input_slice[index];
+         let dest_output_arr = &mut output_slice[0];
+         layer.feed_forward(input_arr, dest_output_arr, self.threshold_func);
       }
    } // pub fn feed_forward(&mut self)
 
    /**
     * Runs backpropagation through the full neural network.
-    * The `expected_out` is the expected output array of the network and is
-    * used to compute the cost function and gradient.
+    * The `target_out` is the expected output array of the network and is
+    * used to compute the cost function and gradient. Its length must
+    * be equal to this network's output size.
     *
     * This function returns the value of the cost function on this particular
-    * training case. The cost is defined as 0.5 * (expected value - actual output)^2
+    * training case. The cost is defined as 0.5 * (target value - actual output)^2
     */
-   pub fn feed_backwards(&mut self, expected_out: &[NumT]) -> NumT
+   pub fn feed_backward(&mut self, target_out: &[NumT]) -> NumT
    {
-      assert_eq!(expected_out.len(), self.get_outputs().len());
+      assert_eq!(target_out.len(), self.get_outputs().len());
 
-      let diff = expected_out[0] - self.get_outputs()[0];
-      let mut error = 0.5 * diff * diff;
-      self.derivs[INPUT_DERIV][0] = diff;
+      // only 1 output node for now.
+      let i = 0;
+
+      let little_omega = target_out[i] - self.get_outputs()[i];
+      let error = 0.5 * little_omega * little_omega;
+      self.derivs[INPUT_DERIV][i] = little_omega;
 
       for (index, layer) in self.layers.iter_mut().enumerate().rev()
       {
-         // rust cannot let us borrow 2 values from a single array at the same time,
-         // so we have to use this hack to appease the borrow checker
-         let (inp_deriv, outp_deriv) = self.derivs.split_at_mut(1);
-         let (inp_act, outp_act) = self.activations.split_at(index + 1);
+         // rust cannot let us borrow 2 values from the same array at the same time,
+         // so we have to use this hack to appease the borrow checker.
+         // The code becomes very ugly since these functions return slices.
+         let (inp_deriv_slice, outp_deriv_slice) = self.derivs.split_at_mut(1);
+         let (inp_act_slice, outp_act_slice) = self.activations.split_at(index + 1);
 
-         layer.feed_backwards(
-            &inp_act[index],
-            &outp_act[0],
+         layer.feed_backward(
+            &inp_act_slice[index],
+            &outp_act_slice[0],
             self.learn_rate,
             self.threshold_func_deriv,
-            &inp_deriv[0][..layer.num_outputs as usize],
-            &mut outp_deriv[0][..layer.num_inputs as usize],
+            &inp_deriv_slice[0][..layer.num_outputs as usize],
+            &mut outp_deriv_slice[0][..layer.num_inputs as usize],
          );
 
+         // the derivatives outputted by this layer become the derivatives
+         // inputted into the previous layer. This layer's input derivatives
+         // will become overwritten.
          self.derivs.swap(INPUT_DERIV, OUTPUT_DERIV);
-      }
+      } // for (index, layer) in self.layers.iter_mut().enumerate().rev()
 
       error
-   } // pub fn feed_backwards(&mut self, expected_out: &[NumT]) -> NumT
+   } // pub fn feed_backward(&mut self, expected_out: &[NumT]) -> NumT
 
    /// Applies the changes stored in `delta_weights` for each of the layers in the network.
    /// See documentation for `NetworkLayer::apply_delta_weights` above.

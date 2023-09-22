@@ -12,6 +12,7 @@
  */
 use crate::config::{make_err, NumT};
 use crate::network::NeuralNetwork;
+
 use std::fs::File;
 use std::io::{Read, Write};
 
@@ -169,7 +170,7 @@ pub fn read_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(),
             .as_str(),
          ))?;
       }
-   }
+   } // for (it, layer) in net.layers().iter().enumerate()
 
    let bytes = &bytes[I32_SIZE * net.layers.len()..];
 

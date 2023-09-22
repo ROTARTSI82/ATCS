@@ -21,8 +21,9 @@
  * and `FuncT` (for activation functions and their derivatives)
  */
 use crate::config::ConfigValue::{Boolean, FloatList, IntList, Integer, Numeric, Text};
-use crate::network::{NetworkLayer, NeuralNetwork, TrainCase};
+use crate::network::{Datapoint, NetworkLayer, NeuralNetwork};
 use crate::serialize::read_net_from_file;
+
 use rand::prelude::*;
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -67,8 +68,10 @@ const PARAMS_TO_PRINT: [&str; 6] = [
  * For examples, see usages in `set_and_echo_config`
  */
 #[macro_export]
-macro_rules! expect_config {
-   ($name: pat, $str_name: expr, $body: expr) => {
+macro_rules! expect_config
+{
+   ($name: pat, $str_name: expr, $body: expr) =>
+   {
       if let $name = $str_name
       {
          $body
@@ -78,7 +81,7 @@ macro_rules! expect_config {
          Err(make_err(concat!("no valid ", stringify!($str_name))))?;
       }
    };
-}
+} // macro_rules! expect_config
 
 /// Utility method for quickly constructing an Error object from a string message.
 #[inline]
@@ -128,10 +131,8 @@ pub fn make_err(msg: &str) -> std::io::Error
  *
  * Refer to the documentation of `parse_config` for the syntax of the configuration format.
  */
-pub fn set_and_echo_config(
-   net: &mut NeuralNetwork,
-   config: &BTreeMap<String, ConfigValue>,
-) -> Result<(), std::io::Error>
+pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, ConfigValue>)
+   -> Result<(), std::io::Error>
 {
    expect_config!(
       Some(Boolean(train)),
@@ -139,21 +140,23 @@ pub fn set_and_echo_config(
       net.do_training = *train
    );
 
-   expect_config!(Some(IntList(list)), config.get("network_topology"), {
+   expect_config!(Some(IntList(list)), config.get("network_topology"),
+   {
       net.layers = (0..list.len() - 1)
          .map(|it| NetworkLayer::new(list[it], list[it + 1], net.do_training))
          .collect();
       net.activations = list
          .iter()
-         .map(|it| vec![0 as NumT; *it as usize].into_boxed_slice())
+         .map(|it| vec![0.0; *it as usize].into_boxed_slice())
          .collect();
 
       let max_width = *list.iter().max().ok_or(make_err("net topology empty"))? as usize;
-      let mk_vec = || vec![0 as NumT; max_width].into_boxed_slice();
+      let mk_vec = || vec![0.0; max_width].into_boxed_slice();
       net.derivs = [mk_vec(), mk_vec()];
-   });
+   }); // expect_config! Some(IntList(list)), config.get("network_topology")
 
-   expect_config!(Some(Text(func)), config.get("activation_function"), {
+   expect_config!(Some(Text(func)), config.get("activation_function"),
+   {
       (net.threshold_func, net.threshold_func_deriv) = match func.as_str()
       {
          "identity" => (ident as FuncT, ident_deriv as FuncT),
@@ -163,11 +166,13 @@ pub fn set_and_echo_config(
             "invalid value for key 'activation_function' in config",
          ))?,
       };
-   });
+   }); // expect_config! Some(Text(func)), config.get("activation_function")
 
-   expect_config!(Some(Text(init_mode)), config.get("initialization_mode"), {
-      set_initialization_mode(net, init_mode, config)?;
-   });
+   expect_config!(
+      Some(Text(init_mode)),
+      config.get("initialization_mode"),
+      set_initialization_mode(net, init_mode, config)?
+   );
 
    if net.do_training
    {
@@ -204,67 +209,66 @@ pub fn set_and_echo_config(
    }
 
    Ok(())
-}
+} // fn set_and_echo_config(net: &mut NeuralNetwork, config: ...) -> Result<...>
 
 /**
  * Loads a dataset stored in the configuration text file itself, in the format
  * of `case [...]` keys. This dataset is used both for training and testing.
  *
- * This function returns Ok(()) and writes the cases into `train_data` on success,
- * otherwise, Err(io::Error) is returned and `train_data` may be partially filled.
+ * This function returns Ok(()) and writes the cases into `dataset` on success,
+ * otherwise, Err(io::Error) is returned and `dataset` may be partially filled.
  *
- * `case [...]` keys are also loaded into `train_data` as test cases for the network.
+ * `case [...]` keys are also loaded into `dataset` as test cases for the network.
  * For example: `case [1.0, 2.4]: float[3.6, 2.6]` specifies the input and the expected output
  * as a `FloatList`. The array in the `case [..]` key are parsed in the same way with
  * rust parsing, so e-notation is supported in all cases.
  */
-pub fn load_dataset_from_config_txt(
-   net: &NeuralNetwork,
-   config: &BTreeMap<String, ConfigValue>,
-   dataset_out: &mut Vec<TrainCase>,
-) -> Result<(), std::io::Error>
+pub fn load_dataset_from_config_txt(net: &NeuralNetwork, config: &BTreeMap<String, ConfigValue>,
+                                    dataset_out: &mut Vec<Datapoint>)
+   -> Result<(), std::io::Error>
 {
-   for (key, value) in config.iter()
+   for (key, value) in config
+      .iter()
+      .filter(|(key, _)| key.starts_with("case"))
    {
-      if key.starts_with("case")
+      if let FloatList(outp) = value
       {
-         if let FloatList(outp) = value
+         let err_msg = || make_err("invalid test case statement");
+         let begin = key.find('[').ok_or(err_msg())? + 1;
+         let end = key.rfind(']').ok_or(err_msg())?;
+         let sub = &key[begin..end];
+
+         let vec = sub
+            .split(',')
+            .map(|x| x.trim().parse::<NumT>())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| err_msg())?;
+
+         if vec.len() != net.layers.first().unwrap().num_inputs as usize
+            || outp.len() != net.layers.last().unwrap().num_outputs as usize
          {
-            let err_msg = || make_err("invalid test case statement");
-            let begin = key.find('[').ok_or(err_msg())? + 1;
-            let end = key.rfind(']').ok_or(err_msg())?;
-            let sub = &key[begin..end];
-
-            let vec = sub
-               .split(',')
-               .map(|x| x.trim().parse::<NumT>())
-               .collect::<Result<Vec<_>, _>>()
-               .map_err(|_| err_msg())?;
-
-            if vec.len() != net.layers.first().unwrap().num_inputs as usize
-               || outp.len() != net.layers.last().unwrap().num_outputs as usize
-            {
-               Err(make_err(
-                  "case size does not match configured input/output size",
-               ))?;
-            }
-            else
-            {
-               dataset_out.push(TrainCase {
-                  inputs: vec.into_boxed_slice(),
-                  expected_outputs: outp.clone().into_boxed_slice(),
-               });
-            }
+            Err(make_err(
+               "case size does not match configured input/output size",
+            ))?;
          }
          else
          {
-            Err(make_err("invalid value for case"))?;
+            dataset_out.push(Datapoint
+            {
+               inputs: vec.into_boxed_slice(),
+               expected_outputs: outp.clone().into_boxed_slice(),
+            });
          }
+      } // if let FloatList(outp) = value
+      else
+      {
+         Err(make_err("invalid value for case"))?;
       }
-   }
+   } // for (key, value) in config.iter().filter(...)
+
    println!();
    Ok(())
-}
+} // fn load_dataset_from_config_txt(: &NeuralNetwork, config, : &mut Vec<Datapoint>) -> Result<...>
 
 /**
  * Loads the weights into a NeuralNetwork based on the method specified by `init_mode`
@@ -274,11 +278,9 @@ pub fn load_dataset_from_config_txt(
  * uniform random values within a specified range (in `config`).
  * Currently, setting the network weights to a fixed value is not yet implemented.
  */
-fn set_initialization_mode(
-   net: &mut NeuralNetwork,
-   init_mode: &str,
-   config: &BTreeMap<String, ConfigValue>,
-) -> Result<(), std::io::Error>
+fn set_initialization_mode(net: &mut NeuralNetwork, init_mode: &str,
+                           config: &BTreeMap<String, ConfigValue>)
+   -> Result<(), std::io::Error>
 {
    match init_mode
    {
@@ -300,10 +302,10 @@ fn set_initialization_mode(
          );
       }
       _ => Err(make_err("invalid 'initialization_mode' in config"))?,
-   }
+   } // match init_mode
 
    Ok(())
-}
+} // fn set_initialization_mode(: &mut NeuralNetwork, init_mode: &str, config: ...) -> Result<...>
 
 /**
  * Randomizes the weights of all layers in the neural network to uniform random
@@ -380,7 +382,7 @@ pub fn parse_config(filename: &str) -> Result<BTreeMap<String, ConfigValue>, std
             .map_err(|_| err_msg())?;
 
          map.insert(key, IntList(list));
-      }
+      } // if val.starts_with("int[")
       else if val.starts_with("float[")
       {
          let end = val.rfind(']').ok_or(err_msg())?;
@@ -391,7 +393,7 @@ pub fn parse_config(filename: &str) -> Result<BTreeMap<String, ConfigValue>, std
             .map_err(|_| err_msg())?;
 
          map.insert(key, FloatList(list));
-      }
+      } // else if val.starts_with("float[")
       else if val == "true" || val == "false"
       {
          map.insert(key, Boolean(val == "true"));
@@ -437,17 +439,17 @@ pub fn ident(x: NumT) -> NumT
 
 pub fn ident_deriv(_: NumT) -> NumT
 {
-   1.0f64
+   1.0
 }
 
 fn sigmoid(x: NumT) -> NumT
 {
-   1.0f64 / (1.0f64 + (-x).exp())
+   1.0 / (1.0 + (-x).exp())
 }
 
 fn sigmoid_deriv(x: NumT) -> NumT
 {
-   x * (1.0f64 - x)
+   x * (1.0 - x)
 }
 
 fn tanh(x: NumT) -> NumT
@@ -458,5 +460,5 @@ fn tanh(x: NumT) -> NumT
 fn tanh_deriv(x: NumT) -> NumT
 {
    // tanh'(x) = sech(x)^2 = 1 - tanh(x)^2
-   1.0f64 - x * x
+   1.0 - x * x
 }
