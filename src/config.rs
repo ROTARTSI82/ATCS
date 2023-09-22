@@ -227,9 +227,7 @@ pub fn load_dataset_from_config_txt(net: &NeuralNetwork, config: &BTreeMap<Strin
                                     dataset_out: &mut Vec<Datapoint>)
    -> Result<(), std::io::Error>
 {
-   for (key, value) in config
-      .iter()
-      .filter(|(key, _)| key.starts_with("case"))
+   for (key, value) in config.iter().filter(|(key, _)| key.starts_with("case"))
    {
       if let FloatList(outp) = value
       {
@@ -382,7 +380,7 @@ pub fn parse_config(filename: &str) -> Result<BTreeMap<String, ConfigValue>, std
             .map_err(|_| err_msg())?;
 
          map.insert(key, IntList(list));
-      } // if val.starts_with("int[")
+      }
       else if val.starts_with("float[")
       {
          let end = val.rfind(']').ok_or(err_msg())?;
@@ -393,7 +391,7 @@ pub fn parse_config(filename: &str) -> Result<BTreeMap<String, ConfigValue>, std
             .map_err(|_| err_msg())?;
 
          map.insert(key, FloatList(list));
-      } // else if val.starts_with("float[")
+      }
       else if val == "true" || val == "false"
       {
          map.insert(key, Boolean(val == "true"));

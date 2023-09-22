@@ -18,11 +18,11 @@ mod serialize;
 
 extern crate core;
 
-use std::error::Error;
-use crate::config::*;
 use crate::config::ConfigValue::Text;
-use crate::serialize::write_net_to_file;
+use crate::config::*;
 use crate::network::{Datapoint, NeuralNetwork};
+use crate::serialize::write_net_to_file;
+use std::error::Error;
 
 /**
  * Runs training on a neural network with the specified `dataset`.
