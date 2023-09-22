@@ -3,6 +3,22 @@
  * By Grant Yang
  * Created on 2023.09.05
  *
+ * This file exports utility functions used for parsing the configuration file
+ * and initializing the neural network based on the specified configurations.
+ *
+ * The `ConfigValue` union type is defined to store the values
+ * from the configuration file.
+ *
+ * The function `parse_config` reads the configuration file,
+ * `set_and_echo_config` initializes the network according to the configuration,
+ * and `load_dataset_from_config_txt` extracts the dataset from the config.
+ *
+ * The following activation functions (and derivatives) are defined:
+ * `sigmoid`, `sigmoid_deriv`, `ident`, `ident_deriv`, `tanh`, `tanh_deriv`
+ *
+ * Also defines the following types:
+ * `NumT` (for the type of network weights and values),
+ * and `FuncT` (for activation functions and their derivatives)
  */
 use crate::config::ConfigValue::{Boolean, FloatList, IntList, Integer, Numeric, Text};
 use crate::network::{NetworkLayer, NeuralNetwork, TrainCase};
@@ -72,18 +88,49 @@ pub fn make_err(msg: &str) -> std::io::Error
 }
 
 /**
- * Initializes the neural network based off of a configuration map
- * and loads training data into the specified vector.
+ * Initializes the neural network based off of a configuration map and
+ * prints out the important parameters onto the console (specified in PARAMS_TO_PRINT)
  *
  * If the configuration is invalid, this function will return an Err(std::io::Error)
  * with a message explaining the problem. Otherwise, it will return Ok(()) and set up the network.
+ *
+ * `network_topology` MUST be a `IntList` specifying the output sizes
+ * of each layer. The first element must be the number of inputs to the network,
+ * and each subsequent value must be the number of outputs for the corresponding layer,
+ * including the final output layer.
+ *
+ * `do_training` MUST be a `Boolean` specifying whether to train the network.
+ * If it is true, extra memory must be allocated to store the delta weights.
+ *
+ * If `do_training` is true, the following values are also required:
+ * `Integer` values of `max_iterations` and `printout_period`,
+ * and `Numeric` values of `learn_rate` and `error_cutoff`
+ *
+ * `max_iterations` is used to determine when to stop training.
+ * One iteration consists of processing all test cases once (also known as an 'epoch').
+ * `printout_period` is the period (in number of iterations) for printing keepalive messages.
+ * Every `printout_period` iterations, the loss and current step size are printed.
+ * `learn_rate` is the step size for gradient descent, and `error_cutoff` is the
+ * minimum loss past which we stop training.
+ * Loss is defined as the sum of 0.5 * (difference between output and expected values)^2 across
+ * all the output nodes and across all the test cases.
+ *
+ * `activation_function` MUST be `Text` with value of `"sigmoid"`, `"identity"`, or `"tanh"`.
+ * It specifies the threshold function to apply element-wise on the output of each layer.
+ *
+ * `initialization_mode` MUST be `Text` with value of `"from_file"`,
+ * `"randomize"`, or `"fixed_value"`. See `randomize_network` for `"randomize"`.
+ * The file used in `"from_file"` is specified by the `load_file` `Text` field.
+ * The range used by `"randomize"` is specified by the `Numeric` values `rand_lo` and `rand_hi`.
+ *
+ * `save_file` must be `Text` of the path in which to save the resulting network.
+ * The binary format is used.
  *
  * Refer to the documentation of `parse_config` for the syntax of the configuration format.
  */
 pub fn set_and_echo_config(
    net: &mut NeuralNetwork,
    config: &BTreeMap<String, ConfigValue>,
-   train_data: &mut Vec<TrainCase>,
 ) -> Result<(), std::io::Error>
 {
    expect_config!(
@@ -101,9 +148,8 @@ pub fn set_and_echo_config(
          .map(|it| vec![0 as NumT; *it as usize].into_boxed_slice())
          .collect();
 
-      net.max_width = *list.iter().max().ok_or(make_err("net topology empty"))?;
-
-      let mk_vec = || vec![0 as NumT; net.max_width as usize].into_boxed_slice();
+      let max_width = *list.iter().max().ok_or(make_err("net topology empty"))? as usize;
+      let mk_vec = || vec![0 as NumT; max_width].into_boxed_slice();
       net.derivs = [mk_vec(), mk_vec()];
    });
 
@@ -123,45 +169,71 @@ pub fn set_and_echo_config(
       set_initialization_mode(net, init_mode, config)?;
    });
 
-   expect_config!(
-      Some(Numeric(lambda)),
-      config.get("learn_rate"),
-      net.learn_rate = *lambda
-   );
-
-   expect_config!(
-      Some(Integer(max_iters)),
-      config.get("max_iterations"),
-      net.max_iters = *max_iters
-   );
-
-   expect_config!(
-      Some(Integer(printout)),
-      config.get("printout_period"),
-      net.printout_period = *printout
-   );
-
-   expect_config!(
-      Some(Numeric(cutoff)),
-      config.get("error_cutoff"),
-      net.err_threshold = *cutoff
-   );
-
-   for (k, v) in config.iter()
+   if net.do_training
    {
-      if PARAMS_TO_PRINT.contains(&k.as_str())
-      {
-         println!("\t{}: {:?}", k, v);
-      }
+      expect_config!(
+         Some(Numeric(lambda)),
+         config.get("learn_rate"),
+         net.learn_rate = *lambda
+      );
 
-      if net.do_training && k.starts_with("case")
+      expect_config!(
+         Some(Integer(max_iters)),
+         config.get("max_iterations"),
+         net.max_iterations = *max_iters
+      );
+
+      expect_config!(
+         Some(Integer(printout)),
+         config.get("printout_period"),
+         net.printout_period = *printout
+      );
+
+      expect_config!(
+         Some(Numeric(cutoff)),
+         config.get("error_cutoff"),
+         net.error_cutoff = *cutoff
+      );
+   } // if net.do_training
+
+   for (key, value) in config
+      .iter()
+      .filter(|(key, _)| PARAMS_TO_PRINT.contains(&key.as_str()))
+   {
+      println!("\t{}: {:?}", key, value);
+   }
+
+   Ok(())
+}
+
+/**
+ * Loads a dataset stored in the configuration text file itself, in the format
+ * of `case [...]` keys. This dataset is used both for training and testing.
+ *
+ * This function returns Ok(()) and writes the cases into `train_data` on success,
+ * otherwise, Err(io::Error) is returned and `train_data` may be partially filled.
+ *
+ * `case [...]` keys are also loaded into `train_data` as test cases for the network.
+ * For example: `case [1.0, 2.4]: float[3.6, 2.6]` specifies the input and the expected output
+ * as a `FloatList`. The array in the `case [..]` key are parsed in the same way with
+ * rust parsing, so e-notation is supported in all cases.
+ */
+pub fn load_dataset_from_config_txt(
+   net: &NeuralNetwork,
+   config: &BTreeMap<String, ConfigValue>,
+   dataset_out: &mut Vec<TrainCase>,
+) -> Result<(), std::io::Error>
+{
+   for (key, value) in config.iter()
+   {
+      if key.starts_with("case")
       {
-         if let FloatList(outp) = v
+         if let FloatList(outp) = value
          {
             let err_msg = || make_err("invalid test case statement");
-            let begin = k.find('[').ok_or(err_msg())? + 1;
-            let end = k.rfind(']').ok_or(err_msg())?;
-            let sub = &k[begin..end];
+            let begin = key.find('[').ok_or(err_msg())? + 1;
+            let end = key.rfind(']').ok_or(err_msg())?;
+            let sub = &key[begin..end];
 
             let vec = sub
                .split(',')
@@ -178,9 +250,9 @@ pub fn set_and_echo_config(
             }
             else
             {
-               train_data.push(TrainCase {
-                  inp: vec.into_boxed_slice(),
-                  outp: outp.clone().into_boxed_slice(),
+               dataset_out.push(TrainCase {
+                  inputs: vec.into_boxed_slice(),
+                  expected_outputs: outp.clone().into_boxed_slice(),
                });
             }
          }
@@ -191,7 +263,6 @@ pub fn set_and_echo_config(
       }
    }
    println!();
-
    Ok(())
 }
 
@@ -201,7 +272,7 @@ pub fn set_and_echo_config(
  *
  * This function supports loading weights from a binary file, or setting them to
  * uniform random values within a specified range (in `config`).
- * Currently, setting the network weights to a fixed value is not implemented.
+ * Currently, setting the network weights to a fixed value is not yet implemented.
  */
 fn set_initialization_mode(
    net: &mut NeuralNetwork,
@@ -284,14 +355,14 @@ pub fn parse_config(filename: &str) -> Result<BTreeMap<String, ConfigValue>, std
    let mut contents = String::new();
    file.read_to_string(&mut contents)?;
 
-   for (line, line_no) in contents.split('\n').zip(1..)
-   {
-      let line = line.trim();
-      if line.starts_with('#') || line.is_empty()
-      {
-         continue;
-      }
+   let lines = contents
+      .split('\n')
+      .zip(1..)
+      .map(|(line, line_no)| (line.trim(), line_no))
+      .filter(|(line, _)| !line.starts_with('#') && !line.is_empty());
 
+   for (line, line_no) in lines
+   {
       let err_str = format!("malformed config line {} ({})", line_no, line);
       let err_msg = || make_err(err_str.as_str());
 

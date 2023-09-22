@@ -7,6 +7,10 @@
  * configuration file specified as a command-line argument.
  * Optionally, this utility can run training with backpropagation
  * and gradient descent.
+ *
+ * See documentation for `parse_config`, `set_and_echo_config`,
+ * and `load_dataset_from_config_txt` in `config.rs`
+ * for more info about the configuration format.
  */
 mod config;
 mod convolve;
@@ -18,7 +22,9 @@ use crate::network::{NeuralNetwork, TrainCase};
 extern crate core;
 
 use crate::config::ConfigValue::Text;
-use crate::config::{make_err, parse_config, set_and_echo_config, NumT};
+use crate::config::{
+   load_dataset_from_config_txt, make_err, parse_config, set_and_echo_config, NumT,
+};
 use crate::serialize::write_net_to_file;
 use std::error::Error;
 
@@ -32,18 +38,18 @@ use std::error::Error;
  */
 fn train_network(network: &mut NeuralNetwork, train_data: &Vec<TrainCase>)
 {
-   let mut loss = network.err_threshold;
+   let mut loss = network.error_cutoff;
    let mut iteration = 0;
 
-   while iteration < network.max_iters && loss >= network.err_threshold
+   while iteration < network.max_iterations && loss >= network.error_cutoff
    {
       loss = 0 as NumT;
 
       for case in train_data
       {
-         network.get_inputs().copy_from_slice(&*case.inp);
+         network.get_inputs().copy_from_slice(&*case.inputs);
          network.feed_forward();
-         loss += network.feed_backwards(&*case.outp);
+         loss += network.feed_backwards(&*case.expected_outputs);
          network.apply_delta_weights();
       }
 
@@ -56,19 +62,21 @@ fn train_network(network: &mut NeuralNetwork, train_data: &Vec<TrainCase>)
       }
 
       iteration += 1;
-   } // for iteration in 0..network.max_iters
+   } // for iteration in 0..network.max_iterations
 
    println!(
       "\nTerminated training after {}/{} iterations",
-      iteration, network.max_iters
+      iteration, network.max_iterations
    );
-   println!("loss={:.6}, threshold={:.6}", loss, network.err_threshold);
-   if loss < network.err_threshold
+
+   println!("loss={:.6}, threshold={:.6}", loss, network.error_cutoff);
+
+   if loss < network.error_cutoff
    {
       println!("\t+ Met error threshold");
    }
 
-   if iteration == network.max_iters
+   if iteration == network.max_iterations
    {
       println!("\t+ Reached maximum number of iterations");
    }
@@ -84,15 +92,15 @@ fn print_truth_table(network: &mut NeuralNetwork, train_data: &Vec<TrainCase>)
    let mut loss = 0 as NumT;
    for case in train_data
    {
-      network.get_inputs().copy_from_slice(&*case.inp);
+      network.get_inputs().copy_from_slice(&*case.inputs);
       network.feed_forward();
-      loss += network.feed_backwards(&*case.outp);
+      loss += network.feed_backwards(&*case.expected_outputs);
 
       println!(
          "network {:?} = {:?} (expected {:?})",
-         case.inp,
+         case.inputs,
          network.get_outputs(),
-         case.outp
+         case.expected_outputs
       );
    } // for case in train_data
 
@@ -103,8 +111,8 @@ fn print_truth_table(network: &mut NeuralNetwork, train_data: &Vec<TrainCase>)
  * Runs/trains a network according to the configuration file
  * specified as the first command-line argument.
  * If no file is specified, "config.txt" is used by default.
- * On success, Ok(()) is returned. On any error an Err() with
- * a message is returned.
+ * On success, Ok(()) is returned. On any error, an Err() with
+ * an appropriate message is returned.
  *
  * Refer to the documentation of `set_and_echo_config` for a specification
  * of the configuration format.
@@ -116,15 +124,18 @@ fn main() -> Result<(), Box<dyn Error>>
    let config = parse_config(filename)?;
 
    let mut network = NeuralNetwork::new();
-   let mut train_data = Vec::new();
-   set_and_echo_config(&mut network, &config, &mut train_data)?;
+   set_and_echo_config(&mut network, &config)?;
+
+   // this dataset is actually used both as the test set and the training set.
+   let mut dataset = Vec::new();
+   load_dataset_from_config_txt(&network, &config, &mut dataset)?;
 
    if network.do_training
    {
-      train_network(&mut network, &train_data);
+      train_network(&mut network, &dataset);
    }
 
-   print_truth_table(&mut network, &train_data);
+   print_truth_table(&mut network, &dataset);
 
    expect_config!(
       Some(Text(filename)),
