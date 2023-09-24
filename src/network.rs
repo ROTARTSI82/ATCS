@@ -86,6 +86,8 @@ pub struct NetworkLayer
    /// The weights and delta_weights matrices are flattened stored in row-major order.
    pub weights: Box<[NumT]>,
    pub delta_weights: Box<[NumT]>,
+   pub moment: Box<[NumT]>,
+   pub vel: Box<[NumT]>,
 
    pub num_inputs: i32,
    pub num_outputs: i32,
@@ -103,7 +105,7 @@ impl NetworkLayer
     */
    pub fn new(num_inputs: i32, num_outputs: i32, do_training: bool) -> NetworkLayer
    {
-      let delta_weights = if do_training
+      let cond_allocate = || if do_training
       {
          vec![0.0; (num_inputs * num_outputs) as usize].into_boxed_slice()
       }
@@ -117,7 +119,9 @@ impl NetworkLayer
          num_inputs,
          num_outputs,
          weights: vec![0.0; (num_inputs * num_outputs) as usize].into_boxed_slice(),
-         delta_weights,
+         delta_weights: cond_allocate(),
+         moment: cond_allocate(),
+         vel: cond_allocate()
       }
    } // fn new(num_inputs: i32, num_outputs: i32, do_training: bool) -> NetworkLayer
 
@@ -140,6 +144,18 @@ impl NetworkLayer
    {
       assert!(inp_index < self.num_inputs as usize && out_index < self.num_outputs as usize);
       &self.weights[inp_index * self.num_outputs as usize + out_index]
+   }
+
+   pub fn get_moment_mut(&mut self, inp_index: usize, out_index: usize) -> &mut NumT
+   {
+      assert!(inp_index < self.num_inputs as usize && out_index < self.num_outputs as usize);
+      &mut self.moment[inp_index * self.num_outputs as usize + out_index]
+   }
+
+   pub fn get_vel_mut(&mut self, inp_index: usize, out_index: usize) -> &mut NumT
+   {
+      assert!(inp_index < self.num_inputs as usize && out_index < self.num_outputs as usize);
+      &mut self.vel[inp_index * self.num_outputs as usize + out_index]
    }
 
    /**
@@ -193,12 +209,16 @@ impl NetworkLayer
     */
    pub fn feed_backward(&mut self, inp_acts_arr: &[NumT], out_acts_arr: &[NumT],
                         learn_rate: NumT, threshold_func_prime: FuncT, deriv_wrt_out: &[NumT],
-                        dest_deriv_wrt_inp: &mut [NumT])
+                        dest_deriv_wrt_inp: &mut [NumT], step: i32)
    {
       assert_eq!(out_acts_arr.len(), self.num_outputs as usize);
       assert_eq!(inp_acts_arr.len(), self.num_inputs as usize);
       assert_eq!(deriv_wrt_out.len(), self.num_outputs as usize);
       assert_eq!(dest_deriv_wrt_inp.len(), self.num_inputs as usize);
+
+      const BETA1: NumT = 0.9;
+      const BETA2: NumT = 0.999;
+      const EPS: NumT = 1e-8;
 
       dest_deriv_wrt_inp.fill(0.0);
       for (out_it, out_act) in out_acts_arr.iter().enumerate()
@@ -209,8 +229,23 @@ impl NetworkLayer
          {
             *dest_wrt_inp += psi * self.get_weight(in_it, out_it);
 
-            let deriv_err_wrt_weight = -inp_acts_arr[in_it] * psi;
-            *self.get_delta_weight_mut(in_it, out_it) = -learn_rate * deriv_err_wrt_weight;
+            let g = -inp_acts_arr[in_it] * psi;
+
+            let mom = self.get_moment_mut(in_it, out_it);
+            *mom *= BETA1;
+            *mom += (1.0 - BETA1) * g;
+            let m = *mom;
+
+            let vel = self.get_vel_mut(in_it, out_it);
+            *vel *= BETA2;
+            *vel += (1.0 - BETA2) * g * g;
+            let v = *vel;
+
+            // sqrt(1 - B2^t) / (1 - B1^t) can cause a div by zero error if t is small
+            // so make sure that step > 0
+            let a = learn_rate * (1.0 - BETA2.powi(step)).sqrt() / (1.0 - BETA1.powi(step));
+
+            *self.get_delta_weight_mut(in_it, out_it) = -a * m / (v.sqrt() + EPS);
          }
       } // for (out_it, out_act) in out_acts_arr.iter().enumerate()
    } // pub fn feed_backward(...)
@@ -295,7 +330,7 @@ impl NeuralNetwork
     * This function returns the value of the cost function on this particular
     * training case. The cost is defined as 0.5 * (target value - actual output)^2
     */
-   pub fn feed_backward(&mut self, target_out: &[NumT]) -> NumT
+   pub fn feed_backward(&mut self, target_out: &[NumT], step: i32) -> NumT
    {
       assert_eq!(target_out.len(), self.get_outputs().len());
 
@@ -321,6 +356,7 @@ impl NeuralNetwork
             self.threshold_func_deriv,
             &inp_deriv_slice[0][..layer.num_outputs as usize],
             &mut outp_deriv_slice[0][..layer.num_inputs as usize],
+            step
          );
 
          // the derivatives outputted by this layer become the derivatives

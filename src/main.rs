@@ -36,6 +36,7 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
 {
    let mut loss = network.error_cutoff;
    let mut iteration = 0;
+   let mut timestep = 1;
 
    while iteration < network.max_iterations && loss >= network.error_cutoff
    {
@@ -45,8 +46,9 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
       {
          network.get_inputs().copy_from_slice(&case.inputs);
          network.feed_forward();
-         loss += network.feed_backward(&case.expected_outputs);
+         loss += network.feed_backward(&case.expected_outputs, timestep);
          network.apply_delta_weights();
+         timestep += 1;
       }
 
       if iteration % network.printout_period == 0
@@ -90,7 +92,7 @@ fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
    {
       network.get_inputs().copy_from_slice(&case.inputs);
       network.feed_forward();
-      loss += network.feed_backward(&case.expected_outputs);
+      loss += network.feed_backward(&case.expected_outputs, 1);
 
       println!(
          "network {:?} = {:?} (expected {:?})",
