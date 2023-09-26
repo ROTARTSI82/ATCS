@@ -216,6 +216,8 @@ impl NetworkLayer
       assert_eq!(deriv_wrt_out.len(), self.num_outputs as usize);
       assert_eq!(dest_deriv_wrt_inp.len(), self.num_inputs as usize);
 
+      // constants for the ADAM optimizer
+      // See https://arxiv.org/pdf/1412.6980.pdf
       const BETA1: NumT = 0.9;
       const BETA2: NumT = 0.999;
       const EPS: NumT = 1e-8;

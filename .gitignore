@@ -1,1 +1,11 @@
 /target
+
+**/.DS_Store
+.idea/
+.ipynb_checkpoints/
+Cargo.lock
+
+cpp/build
+cpp/cmake-build-debug
+
+.helix/
