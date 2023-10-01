@@ -2,8 +2,8 @@
 // Created by Grant Yang on 9/25/23.
 //
 
-#include <iostream>
 #include "lib.hpp"
+#include <iostream>
 
 using namespace grad;
 
@@ -30,7 +30,7 @@ int main() {
             if (epoch % 100 == 0)
                 std::cout << "net " << a << ", " << b << " = " << outp->get(0) << '\n';
 
-            outp->d_wrt_out.get(0) = outp->get(0) - (a ^ b);
+            outp->get_deriv(0) = outp->get(0) - (a ^ b);
             outp->recursive_backwards(step++);
         }
 
