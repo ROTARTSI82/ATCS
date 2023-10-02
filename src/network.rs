@@ -105,24 +105,23 @@ impl NetworkLayer
     */
    pub fn new(num_inputs: i32, num_outputs: i32, do_training: bool) -> NetworkLayer
    {
-      let cond_allocate = || if do_training
-      {
-         vec![0.0; (num_inputs * num_outputs) as usize].into_boxed_slice()
-      }
-      else
-      {
-         Box::new([])
+      let cond_allocate = || {
+         if do_training
+         {
+            vec![0.0; (num_inputs * num_outputs) as usize].into_boxed_slice()
+         }
+         else
+         {
+            Box::new([])
+         }
       };
 
-      NetworkLayer
-      {
-         num_inputs,
-         num_outputs,
-         weights: vec![0.0; (num_inputs * num_outputs) as usize].into_boxed_slice(),
-         delta_weights: cond_allocate(),
-         moment: cond_allocate(),
-         vel: cond_allocate()
-      }
+      NetworkLayer { num_inputs,
+                     num_outputs,
+                     weights: vec![0.0; (num_inputs * num_outputs) as usize].into_boxed_slice(),
+                     delta_weights: cond_allocate(),
+                     moment: cond_allocate(),
+                     vel: cond_allocate() }
    } // fn new(num_inputs: i32, num_outputs: i32, do_training: bool) -> NetworkLayer
 
    /**
@@ -166,17 +165,19 @@ impl NetworkLayer
     * Precondition: `inp_act_arr` must have length equal to `self.num_inputs`
     * and `dest_h_out` must have length equal to `self.num_outputs`.
     */
-   pub fn feed_forward(&self, inp_act_arr: &[NumT],
-                       dest_h_out_arr: &mut [NumT], threshold_func: FuncT)
+   pub fn feed_forward(&self, inp_act_arr: &[NumT], dest_h_out_arr: &mut [NumT],
+                       threshold_func: FuncT)
    {
       assert_eq!(inp_act_arr.len(), self.num_inputs as usize);
       assert_eq!(dest_h_out_arr.len(), self.num_outputs as usize);
 
       for (out_it, dest_h_out) in dest_h_out_arr.iter_mut().enumerate()
       {
-         let theta = (0..self.num_inputs as usize)
-            .map(|in_it| self.get_weight(in_it, out_it) * inp_act_arr[in_it])
-            .sum::<NumT>();
+         let theta = (0..self.num_inputs as usize).map(|in_it| {
+                                                     self.get_weight(in_it, out_it)
+                                                     * inp_act_arr[in_it]
+                                                  })
+                                                  .sum::<NumT>();
 
          *dest_h_out = threshold_func(theta);
       }
@@ -207,8 +208,8 @@ impl NetworkLayer
     * This layer's input is the previous layer's output, so this layer's `dest_deriv_wrt_inp`
     * becomes the new `deriv_wrt_outp` of the previous layer.
     */
-   pub fn feed_backward(&mut self, inp_acts_arr: &[NumT], out_acts_arr: &[NumT],
-                        learn_rate: NumT, threshold_func_prime: FuncT, deriv_wrt_out: &[NumT],
+   pub fn feed_backward(&mut self, inp_acts_arr: &[NumT], out_acts_arr: &[NumT], learn_rate: NumT,
+                        threshold_func_prime: FuncT, deriv_wrt_out: &[NumT],
                         dest_deriv_wrt_inp: &mut [NumT], step: i32)
    {
       assert_eq!(out_acts_arr.len(), self.num_outputs as usize);
@@ -275,19 +276,17 @@ impl NeuralNetwork
     */
    pub fn new() -> NeuralNetwork
    {
-      NeuralNetwork
-      {
+      NeuralNetwork {
          layers: Box::new([]),
          activations: Box::new([]),
          threshold_func: ident,
          threshold_func_deriv: ident_deriv,
          learn_rate: 1.0,
          derivs: [Box::new([]), Box::new([])],
-
          max_iterations: 0,
          error_cutoff: 0.0,
          do_training: false,
-         printout_period: 0,
+         printout_period: 0
       } // NeuralNetwork
    } // pub fn new() -> NeuralNetwork
 
@@ -353,15 +352,13 @@ impl NeuralNetwork
          let (inp_deriv_slice, outp_deriv_slice) = self.derivs.split_at_mut(1);
          let (inp_act_slice, outp_act_slice) = self.activations.split_at(index + 1);
 
-         layer.feed_backward(
-            &inp_act_slice[index],
-            &outp_act_slice[0],
-            self.learn_rate,
-            self.threshold_func_deriv,
-            &inp_deriv_slice[0][..layer.num_outputs as usize],
-            &mut outp_deriv_slice[0][..layer.num_inputs as usize],
-            step
-         );
+         layer.feed_backward(&inp_act_slice[index],
+                             &outp_act_slice[0],
+                             self.learn_rate,
+                             self.threshold_func_deriv,
+                             &inp_deriv_slice[0][..layer.num_outputs as usize],
+                             &mut outp_deriv_slice[0][..layer.num_inputs as usize],
+                             step);
 
          // the derivatives outputted by this layer become the derivatives
          // inputted into the previous layer. This layer's input derivatives

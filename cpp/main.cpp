@@ -65,7 +65,6 @@ int main() {
             outmul.forwards();
             add2.forwards();
             outactiv.forwards();
-            test.forwards();
 
             cost += 0.5 * pow(out.get(0,0) - (a ^ b), 2);
 
@@ -73,6 +72,8 @@ int main() {
                 std::cout << "net " << a << ", " << b << " = " << out.get(0,0) << '\n';
 
             out.get_deriv(0,0) += (out.get(0,0) - (a ^ b));
+
+            test.forwards();
             test.backwards();
             test.grad_and_reset(step + 1);
 

@@ -53,19 +53,15 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
 
       if iteration % network.printout_period == 0
       {
-         println!(
-            "loss={:.6}\tλ={:.6}\tit={}",
-            loss, network.learn_rate, iteration
-         );
+         println!("loss={:.6}\tλ={:.6}\tit={}",
+                  loss, network.learn_rate, iteration);
       }
 
       iteration += 1;
    } // while iteration < network.max_iterations && loss >= network.error_cutoff
 
-   println!(
-      "\nTerminated training after {}/{} iterations",
-      iteration, network.max_iterations
-   );
+   println!("\nTerminated training after {}/{} iterations",
+            iteration, network.max_iterations);
 
    println!("loss={:.6}, threshold={:.6}", loss, network.error_cutoff);
 
@@ -94,12 +90,10 @@ fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
       network.feed_forward();
       loss += network.feed_backward(&case.expected_outputs, 1);
 
-      println!(
-         "network {:?} = {:?} (expected {:?})",
-         case.inputs,
-         network.get_outputs(),
-         case.expected_outputs
-      );
+      println!("network {:?} = {:?} (expected {:?})",
+               case.inputs,
+               network.get_outputs(),
+               case.expected_outputs);
    } // for case in dataset
 
    println!("final loss: {}\n", loss);
@@ -135,11 +129,9 @@ fn main() -> Result<(), Box<dyn Error>>
 
    print_truth_table(&mut network, &dataset);
 
-   expect_config!(
-      Some(Text(filename)),
-      config.get("save_file"),
-      write_net_to_file(&network, filename.as_str())?
-   );
+   expect_config!(Some(Text(filename)),
+                  config.get("save_file"),
+                  write_net_to_file(&network, filename.as_str())?);
 
    Ok(())
 } // fn main() -> Result<(), io::Error>

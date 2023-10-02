@@ -41,16 +41,14 @@ pub fn write_net_to_file(net: &NeuralNetwork, filename: &str) -> Result<(), std:
    let mut bytes = MAGIC_FILE_HEADER.to_vec();
    bytes.extend((net.layers.len() as u32).to_be_bytes());
 
-   let input_size = net
-      .layers
-      .first()
-      .ok_or(make_err("layers empty"))?
-      .num_inputs
-      .to_be_bytes();
-   let layer_bytes = net
-      .layers
-      .iter()
-      .flat_map(|it| it.num_outputs.to_be_bytes());
+   let input_size = net.layers
+                       .first()
+                       .ok_or(make_err("layers empty"))?
+                       .num_inputs
+                       .to_be_bytes();
+   let layer_bytes = net.layers
+                        .iter()
+                        .flat_map(|it| it.num_outputs.to_be_bytes());
 
    bytes.extend(input_size);
    bytes.extend(layer_bytes);
@@ -80,18 +78,16 @@ pub fn write_net_to_file(net: &NeuralNetwork, filename: &str) -> Result<(), std:
  */
 fn consume_i32(list: &[u8]) -> Result<i32, std::io::Error>
 {
-   Ok(i32::from_be_bytes(list[..I32_SIZE].try_into().map_err(
-      |_| make_err("corrupt network depth/input size"),
-   )?))
+   let bytes = list[..I32_SIZE].try_into()
+                               .map_err(|_| make_err("corrupt network depth/input size"))?;
+   Ok(i32::from_be_bytes(bytes))
 }
 
 fn consume_num(list: &[u8]) -> Result<NumT, std::io::Error>
 {
-   Ok(NumT::from_be_bytes(
-      list[..NUM_SIZE]
-         .try_into()
-         .map_err(|_| make_err("corrupt weight/bias"))?,
-   ))
+   let bytes = list[..NUM_SIZE].try_into()
+                               .map_err(|_| make_err("corrupt weight/bias"))?;
+   Ok(NumT::from_be_bytes(bytes))
 }
 
 /**
@@ -112,9 +108,7 @@ pub fn read_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(),
 
    if !bytes.starts_with(MAGIC_FILE_HEADER)
    {
-      Err(make_err(
-         format!("magic header missing from {}", filename).as_str(),
-      ))?;
+      Err(make_err(format!("magic header missing from {}", filename).as_str()))?;
    }
 
    let bytes = &bytes[MAGIC_FILE_HEADER.len()..];
@@ -123,32 +117,21 @@ pub fn read_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(),
    let config_layers = net.layers.len() as i32;
    if model_layers != config_layers
    {
-      Err(make_err(
-         format!(
-            "model file is {} layers, config is {} layers",
-            model_layers, config_layers
-         )
-         .as_str(),
-      ))?;
+      Err(make_err(format!("model file is {} layers, config is {} layers",
+                           model_layers, config_layers).as_str()))?;
    }
 
    let bytes = &bytes[I32_SIZE..];
    let model_input = consume_i32(bytes)?;
-   let config_input = net
-      .layers
-      .first()
-      .ok_or(make_err("layers empty"))?
-      .num_inputs;
+   let config_input = net.layers
+                         .first()
+                         .ok_or(make_err("layers empty"))?
+                         .num_inputs;
 
    if model_input != config_input
    {
-      Err(make_err(
-         format!(
-            "model file is {} inputs, config is {} inputs",
-            model_input, config_input
-         )
-         .as_str(),
-      ))?;
+      Err(make_err(format!("model file is {} inputs, config is {} inputs",
+                           model_input, config_input).as_str()))?;
    }
 
    let bytes = &bytes[I32_SIZE..];
@@ -162,13 +145,8 @@ pub fn read_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(),
       );
       if model_out != layer.num_outputs
       {
-         Err(make_err(
-            format!(
-               "model file layer {} is {} outputs, config is {} outputs",
-               it, model_out, layer.num_outputs
-            )
-            .as_str(),
-         ))?;
+         Err(make_err(format!("model file layer {} is {} outputs, config is {} outputs",
+                              it, model_out, layer.num_outputs).as_str()))?;
       }
    } // for (it, layer) in net.layers().iter().enumerate()
 

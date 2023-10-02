@@ -2,3 +2,5 @@ brace_style="AlwaysNextLine"
 control_brace_style="AlwaysNextLine"
 tab_spaces=3
 hard_tabs=false
+fn_params_layout="Compressed"
+indent_style="Visual"

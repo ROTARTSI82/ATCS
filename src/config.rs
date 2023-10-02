@@ -50,14 +50,12 @@ pub enum ConfigValue
 
 /// These are the parameters of the configuration that are printed out
 /// before running the network.
-const PARAMS_TO_PRINT: [&str; 6] = [
-   "rand_lo",
-   "rand_hi",
-   "network_topology",
-   "max_iterations",
-   "learn_rate",
-   "error_cutoff",
-];
+const PARAMS_TO_PRINT: [&str; 6] = ["rand_lo",
+                                    "rand_hi",
+                                    "network_topology",
+                                    "max_iterations",
+                                    "learn_rate",
+                                    "error_cutoff"];
 
 /**
  * This macro attempts to unwrap a certain value (specified by the expression `str_name`)
@@ -132,78 +130,61 @@ pub fn make_err(msg: &str) -> std::io::Error
  * Refer to the documentation of `parse_config` for the syntax of the configuration format.
  */
 pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, ConfigValue>)
-   -> Result<(), std::io::Error>
+                           -> Result<(), std::io::Error>
 {
-   expect_config!(
-      Some(Boolean(train)),
-      config.get("do_training"),
-      net.do_training = *train
-   );
+   expect_config!(Some(Boolean(train)),
+                  config.get("do_training"),
+                  net.do_training = *train);
 
-   expect_config!(Some(IntList(list)), config.get("network_topology"),
-   {
-      net.layers = (0..list.len() - 1)
-         .map(|it| NetworkLayer::new(list[it], list[it + 1], net.do_training))
-         .collect();
-      net.activations = list
-         .iter()
-         .map(|it| vec![0.0; *it as usize].into_boxed_slice())
-         .collect();
+   expect_config!(Some(IntList(list)), config.get("network_topology"), {
+      net.layers =
+         (0..list.len() - 1).map(|it| NetworkLayer::new(list[it], list[it + 1], net.do_training))
+                            .collect();
+      net.activations = list.iter()
+                            .map(|it| vec![0.0; *it as usize].into_boxed_slice())
+                            .collect();
 
       let max_width = *list.iter().max().ok_or(make_err("net topology empty"))? as usize;
       let mk_vec = || vec![0.0; max_width].into_boxed_slice();
       net.derivs = [mk_vec(), mk_vec()];
    }); // expect_config! Some(IntList(list)), config.get("network_topology")
 
-   expect_config!(Some(Text(func)), config.get("activation_function"),
-   {
+   expect_config!(Some(Text(func)), config.get("activation_function"), {
       (net.threshold_func, net.threshold_func_deriv) = match func.as_str()
       {
          "identity" => (ident as FuncT, ident_deriv as FuncT),
          "sigmoid" => (sigmoid as FuncT, sigmoid_deriv as FuncT),
          "tanh" => (tanh as FuncT, tanh_deriv as FuncT),
-         _ => Err(make_err(
-            "invalid value for key 'activation_function' in config",
-         ))?,
+         _ => Err(make_err("invalid value for key 'activation_function' in config"))?,
       };
    }); // expect_config! Some(Text(func)), config.get("activation_function")
 
-   expect_config!(
-      Some(Text(init_mode)),
-      config.get("initialization_mode"),
-      set_initialization_mode(net, init_mode, config)?
-   );
+   expect_config!(Some(Text(init_mode)),
+                  config.get("initialization_mode"),
+                  set_initialization_mode(net, init_mode, config)?);
 
    if net.do_training
    {
-      expect_config!(
-         Some(Numeric(lambda)),
-         config.get("learn_rate"),
-         net.learn_rate = *lambda
-      );
+      expect_config!(Some(Numeric(lambda)),
+                     config.get("learn_rate"),
+                     net.learn_rate = *lambda);
 
-      expect_config!(
-         Some(Integer(max_iters)),
-         config.get("max_iterations"),
-         net.max_iterations = *max_iters
-      );
+      expect_config!(Some(Integer(max_iters)),
+                     config.get("max_iterations"),
+                     net.max_iterations = *max_iters);
 
-      expect_config!(
-         Some(Integer(printout)),
-         config.get("printout_period"),
-         net.printout_period = *printout
-      );
+      expect_config!(Some(Integer(printout)),
+                     config.get("printout_period"),
+                     net.printout_period = *printout);
 
-      expect_config!(
-         Some(Numeric(cutoff)),
-         config.get("error_cutoff"),
-         net.error_cutoff = *cutoff
-      );
+      expect_config!(Some(Numeric(cutoff)),
+                     config.get("error_cutoff"),
+                     net.error_cutoff = *cutoff);
    } // if net.do_training
 
-   for (key, value) in config
-      .iter()
-      .filter(|(key, _)| PARAMS_TO_PRINT.contains(&key.as_str()))
+   let filtered = config.iter()
+                        .filter(|(key, _)| PARAMS_TO_PRINT.contains(&key.as_str()));
+   for (key, value) in filtered
    {
       println!("\t{}: {:?}", key, value);
    }
@@ -225,7 +206,7 @@ pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, Co
  */
 pub fn load_dataset_from_config_txt(net: &NeuralNetwork, config: &BTreeMap<String, ConfigValue>,
                                     dataset_out: &mut Vec<Datapoint>)
-   -> Result<(), std::io::Error>
+                                    -> Result<(), std::io::Error>
 {
    for (key, value) in config.iter().filter(|(key, _)| key.starts_with("case"))
    {
@@ -236,26 +217,20 @@ pub fn load_dataset_from_config_txt(net: &NeuralNetwork, config: &BTreeMap<Strin
          let end = key.rfind(']').ok_or(err_msg())?;
          let sub = &key[begin..end];
 
-         let vec = sub
-            .split(',')
-            .map(|x| x.trim().parse::<NumT>())
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| err_msg())?;
+         let vec = sub.split(',')
+                      .map(|x| x.trim().parse::<NumT>())
+                      .collect::<Result<Vec<_>, _>>()
+                      .map_err(|_| err_msg())?;
 
          if vec.len() != net.layers.first().unwrap().num_inputs as usize
             || outp.len() != net.layers.last().unwrap().num_outputs as usize
          {
-            Err(make_err(
-               "case size does not match configured input/output size",
-            ))?;
+            Err(make_err("case size does not match configured input/output size"))?;
          }
          else
          {
-            dataset_out.push(Datapoint
-            {
-               inputs: vec.into_boxed_slice(),
-               expected_outputs: outp.clone().into_boxed_slice(),
-            });
+            dataset_out.push(Datapoint { inputs: vec.into_boxed_slice(),
+                                         expected_outputs: outp.clone().into_boxed_slice() });
          }
       } // if let FloatList(outp) = value
       else
@@ -278,26 +253,22 @@ pub fn load_dataset_from_config_txt(net: &NeuralNetwork, config: &BTreeMap<Strin
  */
 fn set_initialization_mode(net: &mut NeuralNetwork, init_mode: &str,
                            config: &BTreeMap<String, ConfigValue>)
-   -> Result<(), std::io::Error>
+                           -> Result<(), std::io::Error>
 {
    match init_mode
    {
       "randomize" =>
       {
-         expect_config!(
-            (Some(Numeric(hi)), Some(Numeric(lo))),
-            (config.get("rand_hi"), config.get("rand_lo")),
-            randomize_network(net, *lo..*hi)
-         );
+         expect_config!((Some(Numeric(hi)), Some(Numeric(lo))),
+                        (config.get("rand_hi"), config.get("rand_lo")),
+                        randomize_network(net, *lo..*hi));
       }
       "fixed_value" => todo!("not implemented"),
       "from_file" =>
       {
-         expect_config!(
-            Some(Text(filename)),
-            config.get("load_file"),
-            read_net_from_file(net, filename.as_str())?
-         );
+         expect_config!(Some(Text(filename)),
+                        config.get("load_file"),
+                        read_net_from_file(net, filename.as_str())?);
       }
       _ => Err(make_err("invalid 'initialization_mode' in config"))?,
    } // match init_mode
@@ -355,11 +326,10 @@ pub fn parse_config(filename: &str) -> Result<BTreeMap<String, ConfigValue>, std
    let mut contents = String::new();
    file.read_to_string(&mut contents)?;
 
-   let lines = contents
-      .split('\n')
-      .zip(1..)
-      .map(|(line, line_no)| (line.trim(), line_no))
-      .filter(|(line, _)| !line.starts_with('#') && !line.is_empty());
+   let lines = contents.split('\n')
+                       .zip(1..)
+                       .map(|(line, line_no)| (line.trim(), line_no))
+                       .filter(|(line, _)| !line.starts_with('#') && !line.is_empty());
 
    for (line, line_no) in lines
    {
@@ -373,22 +343,20 @@ pub fn parse_config(filename: &str) -> Result<BTreeMap<String, ConfigValue>, std
       if val.starts_with("int[")
       {
          let end = val.rfind(']').ok_or(err_msg())?;
-         let list = val["int[".len()..end]
-            .split(',')
-            .map(|x| x.trim().parse::<i32>())
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| err_msg())?;
+         let list = val["int[".len()..end].split(',')
+                                          .map(|x| x.trim().parse::<i32>())
+                                          .collect::<Result<Vec<_>, _>>()
+                                          .map_err(|_| err_msg())?;
 
          map.insert(key, IntList(list));
       }
       else if val.starts_with("float[")
       {
          let end = val.rfind(']').ok_or(err_msg())?;
-         let list = val["float[".len()..end]
-            .split(',')
-            .map(|x| x.trim().parse::<NumT>())
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| err_msg())?;
+         let list = val["float[".len()..end].split(',')
+                                            .map(|x| x.trim().parse::<NumT>())
+                                            .collect::<Result<Vec<_>, _>>()
+                                            .map_err(|_| err_msg())?;
 
          map.insert(key, FloatList(list));
       }
