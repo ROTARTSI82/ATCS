@@ -51,6 +51,7 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
          timestep += 1;
       }
 
+      loss /= dataset.len() as NumT;
       if iteration % network.printout_period == 0
       {
          println!("loss={:.6}\tλ={:.6}\tit={}",
@@ -96,6 +97,7 @@ fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
                case.expected_outputs);
    } // for case in dataset
 
+   loss /= dataset.len() as NumT;
    println!("final loss: {}\n", loss);
 } // fn print_truth_table(network: &mut Network, dataset: &Vec<Datapoint>)
 

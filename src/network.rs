@@ -173,11 +173,10 @@ impl NetworkLayer
 
       for (out_it, dest_h_out) in dest_h_out_arr.iter_mut().enumerate()
       {
-         let theta = (0..self.num_inputs as usize).map(|in_it| {
-                                                     self.get_weight(in_it, out_it)
-                                                     * inp_act_arr[in_it]
-                                                  })
-                                                  .sum::<NumT>();
+         let theta = (0..self.num_inputs as usize)
+            .map(|in_it| {
+               self.get_weight(in_it, out_it) * inp_act_arr[in_it]
+            }).sum::<NumT>();
 
          *dest_h_out = threshold_func(theta);
       }
@@ -234,21 +233,22 @@ impl NetworkLayer
 
             let g = -inp_acts_arr[in_it] * psi;
 
-            let mom = self.get_moment_mut(in_it, out_it);
-            *mom *= BETA1;
-            *mom += (1.0 - BETA1) * g;
-            let m = *mom;
+            // let mom = self.get_moment_mut(in_it, out_it);
+            // *mom *= BETA1;
+            // *mom += (1.0 - BETA1) * g;
+            // let m = *mom;
+            //
+            // let vel = self.get_vel_mut(in_it, out_it);
+            // *vel *= BETA2;
+            // *vel += (1.0 - BETA2) * g * g;
+            // let v = *vel;
+            //
+            // // sqrt(1 - B2^t) / (1 - B1^t) can cause a div by zero error if t is small
+            // // so make sure that step > 0
+            // let a = learn_rate * (1.0 - BETA2.powi(step)).sqrt() / (1.0 - BETA1.powi(step));
 
-            let vel = self.get_vel_mut(in_it, out_it);
-            *vel *= BETA2;
-            *vel += (1.0 - BETA2) * g * g;
-            let v = *vel;
-
-            // sqrt(1 - B2^t) / (1 - B1^t) can cause a div by zero error if t is small
-            // so make sure that step > 0
-            let a = learn_rate * (1.0 - BETA2.powi(step)).sqrt() / (1.0 - BETA1.powi(step));
-
-            *self.get_delta_weight_mut(in_it, out_it) = -a * m / (v.sqrt() + EPS);
+            // -a * m / (v.sqrt() + EPS);
+            *self.get_delta_weight_mut(in_it, out_it) = -learn_rate * g;
          }
       } // for (out_it, out_act) in out_acts_arr.iter().enumerate()
    } // pub fn feed_backward(...)
@@ -276,7 +276,8 @@ impl NeuralNetwork
     */
    pub fn new() -> NeuralNetwork
    {
-      NeuralNetwork {
+      NeuralNetwork
+      {
          layers: Box::new([]),
          activations: Box::new([]),
          threshold_func: ident,
