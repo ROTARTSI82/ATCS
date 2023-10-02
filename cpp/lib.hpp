@@ -4,13 +4,16 @@
 #include <random>
 
 namespace grad {
-    using NumT = double;
+    using NumT = float;
 
     struct Tensor {
+
         NumT *data;
         NumT *derivs;
         int width, height;
         bool owned = true;
+
+        Tensor() : data(nullptr), derivs(nullptr), width(0), height(0), owned(false) {};
 
         explicit Tensor(bool diffable, int w, int h = 1) :
                 data(new NumT[w * h * (diffable ? 2 : 1)]),
@@ -20,6 +23,26 @@ namespace grad {
             assert(h > 0);
             zero_out();
         }
+
+        Tensor(const Tensor &) = delete;
+        Tensor &operator=(Tensor &&rhs) {
+            if (this == &rhs) return *this;
+            data = rhs.data;
+            derivs = rhs.derivs;
+            owned = rhs.owned;
+            width = rhs.width;
+            height = rhs.height;
+            rhs.owned = false;
+            return *this;
+        };
+
+        Tensor &operator=(const Tensor &) = delete;
+        Tensor(Tensor &&other) : data(other.data), derivs(other.derivs), width(other.width), height(other.height), owned(other.owned) {
+            other.owned = false;
+        }
+
+        Tensor(Tensor *other, int w, int h, int l) : data(&other->get(w, h)), derivs(&other->get_deriv(w, h)),
+                                                     width(l), height(1), owned(false) {}
 
         ~Tensor() {
             if (owned)
@@ -82,13 +105,15 @@ namespace grad {
 
         explicit ADAMParameter(int w, int h = 1) : param(true, w, h), moment(false, w, h), vel(false, w, h) {}
 
+        ADAMParameter() = default;
+
         constexpr static NumT BETA1 = 0.9;
         constexpr static NumT BETA2 = 0.999;
         constexpr static NumT EPS = 1e-8;
         constexpr static NumT LEARN_RATE = 0.001;
         constexpr static NumT WEIGHT_DECAY = 1e-5;
 
-        inline void apply_grad(int step) {
+        inline void apply_grad(uint64_t step) {
             NumT alpha = LEARN_RATE * std::sqrt(1.0 - std::pow(BETA2, step)) / (1.0 - std::pow(BETA1, step));
 
             for (int r = 0; r < param.height; r++)
@@ -122,13 +147,15 @@ namespace grad {
 
     struct MatMul final : public Operation {
         Tensor *inp, *mat, *out;
-        bool transpose;
+        NumT constant = 1.0;
+        bool transpose, transout;
 
-        MatMul(Tensor *inp, Tensor *mat, Tensor *out, bool transpose = false) : inp(inp), mat(mat), out(out),
-                                                                                transpose(transpose) {
+        MatMul(Tensor *inp, Tensor *mat, Tensor *out, bool transpose = false, bool transout = false, NumT c = 1.0) :
+                inp(inp), mat(mat), out(out),
+                constant(c), transpose(transpose), transout(transout) {
             assert(mat->width == (transpose ? inp->width : inp->height));
-            assert(mat->height == out->height);
-            assert(out->width == (transpose ? inp->height : inp->width));
+            assert(mat->height == (transout ? out->width : out->height));
+            assert((transout ? out->height : out->width) == (transpose ? inp->height : inp->width));
         }
 
         ~MatMul() final = default;
@@ -137,10 +164,11 @@ namespace grad {
             const int dir = transpose ? inp->height : inp->width;
             for (int inc = 0; inc < dir; inc++)
                 for (int r = 0; r < mat->height; r++) {
-                    out->get(inc, r) = 0;
+                    NumT &ov = transout ? out->get(r, inc) : out->get(inc, r);
+                    ov = 0;
                     for (int c = 0; c < mat->width; c++) {
                         const NumT iv = (transpose ? inp->get(c, inc) : inp->get(inc, c));
-                        out->get(inc, r) += mat->get(c, r) * iv;
+                        ov += constant * mat->get(c, r) * iv;
                     }
                 }
         }
@@ -149,12 +177,12 @@ namespace grad {
             const int dir = transpose ? inp->height : inp->width;
             for (int inc = 0; inc < dir; inc++)
                 for (int r = 0; r < mat->height; r++) {
-                    NumT out_deriv = out->get_deriv(inc, r);
+                    NumT out_deriv = transout ? out->get_deriv(r, inc) : out->get_deriv(inc, r);
                     for (int c = 0; c < mat->width; c++) {
                         NumT &iv = transpose ? inp->get(c, inc) : inp->get(inc, c);
                         NumT &dv = transpose ? inp->get_deriv(c, inc) : inp->get_deriv(inc, c);
-                        dv += mat->get(c, r) * out_deriv;
-                        mat->get_deriv(c, r) += iv * out_deriv;
+                        dv += mat->get(c, r) * out_deriv * constant;
+                        mat->get_deriv(c, r) += constant * iv * out_deriv;
                     }
                 }
         }
@@ -242,10 +270,9 @@ namespace grad {
         Tensor *tensor;
         ADAMParameter gain, bias;
         NumT var = 1, mean = 0;
+        uint64_t samples_seen = 0;
 
         constexpr static NumT EPS = 1e-05;
-        constexpr static NumT BETA_M = 0.51;
-        constexpr static NumT BETA_V = 0.01;
 
         explicit LayerNormInPlace(Tensor *tensor) : tensor(tensor), gain(tensor->width, tensor->height),
                                                     bias(tensor->width, tensor->height) {
@@ -259,20 +286,22 @@ namespace grad {
         ~LayerNormInPlace() final = default;
 
         void forwards() final {
-            NumT cur_mean = 0;
-            NumT cur_var = 0;
+            NumT mean_accum = 0;
+            NumT var_accum = 0;
             for (int r = 0; r < tensor->height; r++) {
                 for (int c = 0; c < tensor->width; c++) {
                     NumT &x = tensor->get(c, r);
-                    cur_mean += x;
-                    cur_var += (x - mean) * (x - mean);
+                    mean_accum += x;
+                    var_accum += (x - mean) * (x - mean);
                 }
             }
 
-            cur_mean /= tensor->tot_size();
-            cur_var /= tensor->tot_size();
-            mean = BETA_M * mean + (1 - BETA_M) * cur_mean;
-            var = BETA_V * var + (1 - BETA_V) * cur_var;
+            samples_seen++;
+
+            // this is probably not ideal since the weights change, and we
+            // weigh all current and past results equally.
+            mean = (mean * NumT(samples_seen - 1) + mean_accum / tensor->tot_size()) / NumT(samples_seen);
+            var = (var * NumT(samples_seen - 1) + var_accum / tensor->tot_size()) / NumT(samples_seen);
 
             for (int r = 0; r < tensor->height; r++) {
                 for (int c = 0; c < tensor->width; c++) {
@@ -292,7 +321,7 @@ namespace grad {
                 }
         }
 
-        inline void apply_grad(int step) {
+        inline void apply_grad(uint64_t step) {
             gain.apply_grad(step);
             bias.apply_grad(step);
         }

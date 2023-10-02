@@ -2,12 +2,14 @@
 // Created by Grant Yang on 9/25/23.
 //
 
-#include "lib.hpp"
+#include "transformer.hpp"
 #include <iostream>
 
 using namespace grad;
 
 int main() {
+    SelfAttn test(32, 64, 8, 8, 4);
+
     Tensor input{true, 2};
     Tensor hid1{true, 1, 4};
     Tensor hidtrans{true, 4, 1};
@@ -63,6 +65,7 @@ int main() {
             outmul.forwards();
             add2.forwards();
             outactiv.forwards();
+            test.forwards();
 
             cost += 0.5 * pow(out.get(0,0) - (a ^ b), 2);
 
@@ -70,6 +73,8 @@ int main() {
                 std::cout << "net " << a << ", " << b << " = " << out.get(0,0) << '\n';
 
             out.get_deriv(0,0) += (out.get(0,0) - (a ^ b));
+            test.backwards();
+            test.grad_and_reset(step + 1);
 
             outactiv.backwards();
             add2.backwards();

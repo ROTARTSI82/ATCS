@@ -337,11 +337,13 @@ impl NeuralNetwork
       assert_eq!(target_out.len(), self.get_outputs().len());
 
       // only 1 output node for now.
-      let i = 0;
-
-      let little_omega = target_out[i] - self.get_outputs()[i];
-      let error = 0.5 * little_omega * little_omega;
-      self.derivs[INPUT_DERIV][i] = little_omega;
+      let mut error = 0.0;
+      for i in 0..self.get_outputs().len()
+      {
+         let little_omega = target_out[i] - self.get_outputs()[i];
+         error += 0.5 * little_omega * little_omega;
+         self.derivs[INPUT_DERIV][i] = little_omega;
+      }
 
       for (index, layer) in self.layers.iter_mut().enumerate().rev()
       {
