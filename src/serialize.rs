@@ -33,8 +33,8 @@ const MAGIC_FILE_HEADER: &[u8] = b"ATNeuralNetwork";
  *    as the last value. (This field is an array of 32-bit big endian integers)
  *    The number of values in this field is equal to the value of field #2.
  * 5. The weights of each layer successively. The format is the same as the format
- *    of the `NetworkLayer::weights` field. (This field is an array of `NumT` values
- *    as converted to binary by rust's `to_be_bytes`)
+ *    of the `NetworkLayer::weights` field (a packed matrix in row-major order)
+ *    This field is an array of `NumT` values as converted to binary by rust's `to_be_bytes`
  */
 pub fn write_net_to_file(net: &NeuralNetwork, filename: &str) -> Result<(), std::io::Error>
 {
@@ -79,14 +79,16 @@ pub fn write_net_to_file(net: &NeuralNetwork, filename: &str) -> Result<(), std:
 fn consume_i32(list: &[u8]) -> Result<i32, std::io::Error>
 {
    let bytes = list[..I32_SIZE].try_into()
-                               .map_err(|_| make_err("corrupt network depth/input size"))?;
+       .map_err(|_| make_err("corrupt network depth/input size"))?;
+
    Ok(i32::from_be_bytes(bytes))
 }
 
 fn consume_num(list: &[u8]) -> Result<NumT, std::io::Error>
 {
    let bytes = list[..NUM_SIZE].try_into()
-                               .map_err(|_| make_err("corrupt weight/bias"))?;
+       .map_err(|_| make_err("corrupt network weight"))?;
+
    Ok(NumT::from_be_bytes(bytes))
 }
 

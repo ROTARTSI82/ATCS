@@ -5,7 +5,7 @@
  *
  * Command-line utility to run a neural network according to a
  * configuration file specified as a command-line argument.
- * Optionally, this utility can run training with backpropagation
+ * Optionally, this utility can run training with gradient descent
  * and gradient descent.
  *
  * See documentation for `parse_config`, `set_and_echo_config`,

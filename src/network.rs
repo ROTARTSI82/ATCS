@@ -4,12 +4,12 @@
  * Created on 2023.09.05
  *
  * Defines the NeuralNetwork struct and the methods to
- * run the network and perform backpropagation.
+ * run the network and perform gradient descent learning.
  *
  * The `NetworkLayer` and `NeuralNetwork` structs implement the functions
- * `feed_forward` to run on an input, `feed_backward` to perform backpropagation,
+ * `feed_forward` to run on an input, `feed_backward` to perform gradient descent,
  * and `apply_delta_weights` to run gradient descent by applying
- * the changes calculated in backpropagation.
+ * the changes calculated in gradient descent.
  *
  * This file also defines the `Datapoint` struct for testing and training data.
  */
@@ -18,7 +18,7 @@ use crate::config::{ident, ident_deriv, FuncT, NumT};
 /**
  * These are array indices into `NeuralNetwork::activations`,
  * specifying where to read from and where to write to during the
- * backpropagation step. See `NeuralNetwork::feed_backward` and `NetworkLayer::feed_backward`
+ * gradient descent step. See `NeuralNetwork::feed_backward` and `NetworkLayer::feed_backward`
  */
 const INPUT_DERIV: usize = 0;
 const OUTPUT_DERIV: usize = 1;
@@ -46,17 +46,17 @@ pub struct NeuralNetwork
     * This array stores the input, hidden, and output activations of the network.
     * Index 0 is an array of the inputs to the network, and the last array
     * is the output. Each of the arrays in the middle contain the hidden
-    * layers' activations. These values are needed for backpropagation.
+    * layers' activations. These values are needed for gradient descent.
     */
    pub activations: Box<[Box<[NumT]>]>,
 
    /**
     * This array is used to store the partial derivatives
-    * needed for backpropagation. Both arrays are of the same size,
+    * needed for gradient descent. Both arrays are of the same size,
     * that size being equal to "fattest" point of the network
     * (i.e. the maximum number of activations for a layer in the network).
     *
-    * This is just used as scratch space during backpropagation,
+    * This is just used as scratch space during gradient descent,
     * and the values stored here are not of any interest.
     */
    pub derivs: [Box<[NumT]>; 2],
@@ -172,7 +172,7 @@ impl NetworkLayer
    } // pub fn feed_forward(&self, inp: &[NumT], out: &mut [NumT], act: FuncT)
 
    /**
-    * Performs backpropagation on this network layer. No weights are changed,
+    * Performs gradient descent on this network layer. No weights are changed,
     * only written to the `delta_weights` array.
     * To apply the changes, call `apply_delta_weights`.
     *
@@ -218,7 +218,7 @@ impl NetworkLayer
    } // pub fn feed_backward(...)
 
    /// Changes the weights throughout the network according to the stored deltas,
-   /// and then clears the deltas to zero for the next backpropagation step.
+   /// and then clears the deltas to zero for the next training step.
    pub fn apply_delta_weights(&mut self)
    {
       for (weight, delta) in self.weights.iter_mut().zip(self.delta_weights.iter())
@@ -288,7 +288,7 @@ impl NeuralNetwork
    } // pub fn feed_forward(&mut self)
 
    /**
-    * Runs backpropagation through the full neural network.
+    * Runs gradient descent through the full neural network.
     * The `target_out` is the expected output array of the network and is
     * used to compute the cost function and gradient. Its length must
     * be equal to this network's output size.
