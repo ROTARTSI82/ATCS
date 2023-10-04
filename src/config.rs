@@ -392,10 +392,6 @@ pub fn parse_config(filename: &str) -> Result<BTreeMap<String, ConfigValue>, std
 /**
  * These are the supported activation functions along with their derivatives:
  * The identity function, hyperbolic tangent, and logistic sigmoid.
- *
- * The `_deriv` functions take the output value of their corresponding functions
- * and return the derivative of that function. Mathematically, if the original function
- * is f(x), then the `_deriv` function is f'(f^-1(x))
  */
 
 pub fn ident(x: NumT) -> NumT
@@ -415,7 +411,9 @@ fn sigmoid(x: NumT) -> NumT
 
 fn sigmoid_deriv(x: NumT) -> NumT
 {
-   x * (1.0 - x)
+   let exp = x.exp();
+   let exp_p1 = exp + 1.0;
+   exp / (exp_p1 * exp_p1)
 }
 
 fn tanh(x: NumT) -> NumT
@@ -425,6 +423,6 @@ fn tanh(x: NumT) -> NumT
 
 fn tanh_deriv(x: NumT) -> NumT
 {
-   // tanh'(x) = sech(x)^2 = 1 - tanh(x)^2
-   1.0 - x * x
+   let cosh = x.cosh();
+   1.0 / (cosh * cosh)
 }
