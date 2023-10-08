@@ -207,6 +207,7 @@ impl NetworkLayer
       {
          let psi = deriv_wrt_out[out_it] * threshold_func_prime(self.thetas_out[out_it]);
 
+         assert!(psi.is_finite() && !psi.is_nan());
          for (in_it, dest_wrt_inp) in dest_deriv_wrt_inp.iter_mut().enumerate()
          {
             *dest_wrt_inp += psi * self.get_weight(in_it, out_it);

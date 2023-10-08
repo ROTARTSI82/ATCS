@@ -116,8 +116,9 @@ pub fn make_err(msg: &str) -> std::io::Error
  * Loss is defined as the sum of 0.5 * (difference between output and expected values)^2 across
  * all the output nodes and across all the test cases.
  *
- * `activation_function` MUST be `Text` with value of `"sigmoid"`, `"identity"`, or `"tanh"`.
- * It specifies the threshold function to apply element-wise on the output of each layer.
+ * `activation_function` MUST be `Text` with value of `"sigmoid"`, `"identity"`, `"tanh"`, or
+ * `"leaky_relu"`. It specifies the threshold function to apply element-wise
+ * on the output of each layer.
  *
  * `initialization_mode` MUST be `Text` with value of `"from_file"`,
  * `"randomize"`, or `"fixed_value"`. See `randomize_network` for `"randomize"`.
@@ -155,6 +156,7 @@ pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, Co
          "identity" => (ident as FuncT, ident_deriv as FuncT),
          "sigmoid" => (sigmoid as FuncT, sigmoid_deriv as FuncT),
          "tanh" => (tanh as FuncT, tanh_deriv as FuncT),
+         "leaky_relu" => (leaky_relu as FuncT, leaky_relu_deriv as FuncT),
          _ => Err(make_err("invalid value for key 'activation_function' in config"))?,
       };
    }); // expect_config! Some(Text(func)), config.get("activation_function")
@@ -183,7 +185,7 @@ pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, Co
    } // if net.do_training
 
    let filtered = config.iter()
-                        .filter(|(key, _)| PARAMS_TO_PRINT.contains(&key.as_str()));
+         .filter(|(key, _)| PARAMS_TO_PRINT.contains(&key.as_str()));
    for (key, value) in filtered
    {
       println!("\t{}: {:?}", key, value);
@@ -391,7 +393,7 @@ pub fn parse_config(filename: &str) -> Result<BTreeMap<String, ConfigValue>, std
 
 /**
  * These are the supported activation functions along with their derivatives:
- * The identity function, hyperbolic tangent, and logistic sigmoid.
+ * The identity function, hyperbolic tangent, logistic sigmoid, and leaky ReLU.
  */
 
 pub fn ident(x: NumT) -> NumT
@@ -414,6 +416,23 @@ fn sigmoid_deriv(x: NumT) -> NumT
    let exp = x.exp();
    let exp_p1 = exp + 1.0;
    exp / (exp_p1 * exp_p1)
+}
+
+fn leaky_relu(x: NumT) -> NumT
+{
+   leaky_relu_deriv(x) * x
+}
+
+fn leaky_relu_deriv(x: NumT) -> NumT
+{
+   if x > 0.0
+   {
+      1.0
+   }
+   else
+   {
+      0.01
+   }
 }
 
 fn tanh(x: NumT) -> NumT

@@ -37,6 +37,7 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
    let mut loss = network.error_cutoff;
    let mut iteration = 0;
 
+   let start = std::time::Instant::now();
    while iteration < network.max_iterations && loss >= network.error_cutoff
    {
       loss = 0.0;
@@ -58,6 +59,7 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
 
       iteration += 1;
    } // while iteration < network.max_iterations && loss >= network.error_cutoff
+   let duration = start.elapsed();
 
    println!("\nTerminated training after {}/{} iterations",
             iteration, network.max_iterations);
@@ -73,6 +75,12 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
    {
       println!("\t+ Reached maximum number of iterations");
    }
+
+   let ms = duration.as_millis() as NumT;
+   println!("\nTrained in {} seconds ({}ms per iteration, {}ms per case)",
+            duration.as_secs_f64(),
+            ms / iteration as NumT,
+            ms);
 } // fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
 
 /**

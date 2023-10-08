@@ -7,7 +7,7 @@ learn_rate: float 0.3
 printout_period: int 16000
 
 network_topology: int[3,1,3]
-activation_function: "sigmoid"
+activation_function: "leaky_relu"
 
 # "randomize", "from_file", or "fixed_value" (fixed_value is not implemented yet)
 initialization_mode: "randomize"
