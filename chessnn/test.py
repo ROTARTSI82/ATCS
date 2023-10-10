@@ -1,5 +1,5 @@
 import math
-
+import functools
 import torch
 import torch.nn as nn
 
@@ -15,8 +15,8 @@ nn_dim = 128
 
 n_blocks = 3
 
-inp_size = 1
-out_size = 1
+inp_size = 2
+out_size = 3
 
 dropout = 0
 
@@ -29,7 +29,7 @@ class Attention(nn.Module):
         self.qkv_proj = nn.Linear(channels, (qk_size * 2 + v_size) * n_heads, bias=False)
         self.out_proj = nn.Linear(v_size * n_heads, channels, bias=False)
         self.final_dropout = nn.Dropout(dropout) 
-        self.softmax = nn.Softmax(dim=-1) # softmax along matrix ROWS
+        # self.softmax = nn.Softmax(dim=-1) # softmax along matrix ROWS
 
     def forward(self, x):
         """
@@ -41,7 +41,6 @@ class Attention(nn.Module):
         q = q.view(B, T, n_heads, qk_size).transpose(1, 2)  # B x n_heads x T x qk_size
         k = k.view(B, T, n_heads, qk_size).transpose(1, 2)
         v = v.view(B, T, n_heads, v_size).transpose(1, 2)  # B x n_heads x T x v_size
-
 
         """
         kT = k.transpose(2, 3)  # B x n_heads x qk_size x T
@@ -62,32 +61,34 @@ class Block(nn.Module):
         self.norm_lin = nn.LayerNorm(channels)
 
         self.attn = Attention()
-        self.mlp = nn.Sequential(nn.Linear(channels, nn_dim), activ(), nn.Linear(nn_dim, channels))
-        self.drop = nn.Dropout(dropout)
+        self.mlp = nn.Sequential(nn.Linear(channels, nn_dim), activ(), nn.Linear(nn_dim, channels), nn.Dropout(dropout))
 
     def forward(self, x):
         x = x + self.attn(self.norm_attn(x))
         x = x + self.mlp(self.norm_lin(x))
-        return self.drop(x)
+        return x
 
 
 class Transformer(nn.Module):
     def __init__(self):
         super().__init__()
         self.seq = nn.Sequential(nn.Linear(inp_size, channels), activ(), nn.Dropout(dropout),
-                                 *[Block() for _ in range(n_blocks)], nn.Linear(channels, out_size))
+                                 *[Block() for _ in range(n_blocks)], nn.LayerNorm(channels), nn.Linear(channels, out_size))
 
     def forward(self, x):
         return self.seq(x)
 
 
 model = Transformer().to(dev).train()
-opt = torch.optim.Adam(model.parameters())
+opt = torch.optim.AdamW(model.parameters())
 
 loss_fn = torch.nn.MSELoss()
 
-inps = torch.tensor([[[0], [1]], [[1], [0]], [[0], [0]], [[1], [1]]], dtype=torch.float32).to(dev)
-outs = torch.tensor([[[1], [1]], [[1], [1]], [[0], [0]], [[0], [0]]], dtype=torch.float32).to(dev)
+params = sum([functools.reduce(lambda a, b: a * b, i.size()) for i in model.parameters()])
+print("Training transformer with", params, "parameters\n")
+
+inps = torch.tensor([[[0,0], [1,1]], [[1,0], [0,1]], [[0,0], [0,1]], [[1,0], [1,1]]], dtype=torch.float32).to(dev)
+outs = torch.tensor([[[1,1,-1], [1,1,-1]], [[1,1,-1], [1,1,-10]], [[0,0,0], [0,0,0]], [[0,1,1], [0,1,1]]], dtype=torch.float32).to(dev)
 
 epoch = 1
 while True:

@@ -47,7 +47,6 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
          network.get_inputs().copy_from_slice(&case.inputs);
          network.feed_forward();
          loss += network.feed_backward(&case.expected_outputs);
-         network.apply_delta_weights();
       }
 
       loss /= dataset.len() as NumT;
@@ -80,7 +79,7 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
    println!("\nTrained in {} seconds ({}ms per iteration, {}ms per case)",
             duration.as_secs_f64(),
             ms / iteration as NumT,
-            ms);
+            ms / (dataset.len() as NumT * iteration as NumT));
 } // fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
 
 /**
@@ -95,9 +94,9 @@ fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
    {
       network.get_inputs().copy_from_slice(&case.inputs);
       network.feed_forward();
-      loss += network.feed_backward(&case.expected_outputs);
+      loss += network.calculate_error(&case.expected_outputs);
 
-      println!("network {:?} = {:?} (expected {:?})",
+      println!("network {:.2?} = {:.2?} (expected {:.2?})",
                case.inputs,
                network.get_outputs(),
                case.expected_outputs);

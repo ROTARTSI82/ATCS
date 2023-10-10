@@ -47,6 +47,9 @@ pub struct NeuralNetwork
     * Index 0 is an array of the inputs to the network, and the last array
     * is the output. Each of the arrays in the middle contain the hidden
     * layers' activations. These values are needed for gradient descent.
+    *
+    * In the design, elements in this array correspond to the a_k values, the h_j values,
+    * and the F_i values.
     */
    pub activations: Box<[Box<[NumT]>]>,
 
@@ -59,7 +62,7 @@ pub struct NeuralNetwork
     * This is just used as scratch space during gradient descent,
     * and the values stored here are not of any interest.
     */
-   pub derivs: [Box<[NumT]>; 2],
+   pub omegas: [Box<[NumT]>; 2],
 
    /// The activation functions apply element-wise to each layer's output.
    pub threshold_func: FuncT,
@@ -85,7 +88,6 @@ pub struct NetworkLayer
 {
    /// The weights and delta_weights matrices are flattened stored in row-major order.
    pub weights: Box<[NumT]>,
-   pub delta_weights: Box<[NumT]>,
    pub thetas_out: Box<[NumT]>,
 
    pub num_inputs: i32,
@@ -120,30 +122,28 @@ impl NetworkLayer
          num_inputs,
          num_outputs,
          weights: vec![0.0; (num_inputs * num_outputs) as usize].into_boxed_slice(),
-         thetas_out: cond_allocate(num_outputs as usize),
-         delta_weights: cond_allocate((num_inputs * num_outputs) as usize)
+         thetas_out: cond_allocate(num_outputs as usize)
       }
    } // fn new(num_inputs: i32, num_outputs: i32, do_training: bool) -> NetworkLayer
 
    /**
-    * The following functions, `get_delta_weight_mut` and `get_weight`,
-    * are used for indexing into the weight and delta weight matrices.
+    * These functions are used for indexing into the weight matrix.
     * These make code easier since I used flattened weight arrays. Instead of using a 2d
     * array to store the weight matrices, I used 1d arrays in row-major order.
     *
-    * All of these functions have the precondition of 0 <= `inp_index` < `self.num_inputs`
-    * and 0 <= `out_index` < `self.num_outputs`.
+    * Both functions have the following preconditions:
+    * 0 <= `inp_index` < `self.num_inputs` and 0 <= `out_index` < `self.num_outputs`.
     */
-   pub fn get_delta_weight_mut(&mut self, inp_index: usize, out_index: usize) -> &mut NumT
-   {
-      assert!(inp_index < self.num_inputs as usize && out_index < self.num_outputs as usize);
-      &mut self.delta_weights[inp_index * self.num_outputs as usize + out_index]
-   }
-
    pub fn get_weight(&self, inp_index: usize, out_index: usize) -> &NumT
    {
       assert!(inp_index < self.num_inputs as usize && out_index < self.num_outputs as usize);
       &self.weights[inp_index * self.num_outputs as usize + out_index]
+   }
+
+   pub fn get_weight_mut(&mut self, inp_index: usize, out_index: usize) -> &mut NumT
+   {
+      assert!(inp_index < self.num_inputs as usize && out_index < self.num_outputs as usize);
+      &mut self.weights[inp_index * self.num_outputs as usize + out_index]
    }
 
    /**
@@ -172,9 +172,8 @@ impl NetworkLayer
    } // pub fn feed_forward(&self, inp: &[NumT], out: &mut [NumT], act: FuncT)
 
    /**
-    * Performs gradient descent on this network layer. No weights are changed,
-    * only written to the `delta_weights` array.
-    * To apply the changes, call `apply_delta_weights`.
+    * Performs gradient descent on this network layer and takes a step
+    * in parameter space (i.e. steps the weights along the gradients to minimize cost).
     *
     * `inp_acts_arr` is an array of the original inputs fed into this layer.
     * Its length MUST be equal to `self.num_inputs`.
@@ -184,7 +183,7 @@ impl NetworkLayer
     * `threshold_func_prime` is the derivative of the threshold function that was used
     * in this layer.
     *
-    * `deriv_wrt_outp` is the derivative of the cost function with respect to
+    * `deriv_wrt_out` is the derivative of the cost function with respect to
     * each of this layer's outputs. Its length MUST be equal to `self.num_outputs`
     *
     * `dest_deriv_wrt_inp` is an array to output into, where this function will write
@@ -211,24 +210,10 @@ impl NetworkLayer
          for (in_it, dest_wrt_inp) in dest_deriv_wrt_inp.iter_mut().enumerate()
          {
             *dest_wrt_inp += psi * self.get_weight(in_it, out_it);
-
-            let g = -inp_acts_arr[in_it] * psi;
-            *self.get_delta_weight_mut(in_it, out_it) = -learn_rate * g;
+            *self.get_weight_mut(in_it, out_it) += learn_rate * inp_acts_arr[in_it] * psi;
          }
-      } // for (out_it, out_act) in out_acts_arr.iter().enumerate()
+      } // for out_it in 0..self.thetas_out.len()
    } // pub fn feed_backward(...)
-
-   /// Changes the weights throughout the network according to the stored deltas,
-   /// and then clears the deltas to zero for the next training step.
-   pub fn apply_delta_weights(&mut self)
-   {
-      for (weight, delta) in self.weights.iter_mut().zip(self.delta_weights.iter())
-      {
-         *weight += delta;
-      }
-
-      self.delta_weights.fill(0.0);
-   }
 } // impl NetworkLayer
 
 impl NeuralNetwork
@@ -248,7 +233,7 @@ impl NeuralNetwork
          threshold_func: ident,
          threshold_func_deriv: ident_deriv,
          learn_rate: 1.0,
-         derivs: [Box::new([]), Box::new([])],
+         omegas: [Box::new([]), Box::new([])],
          max_iterations: 0,
          error_cutoff: 0.0,
          do_training: false,
@@ -289,33 +274,48 @@ impl NeuralNetwork
    } // pub fn feed_forward(&mut self)
 
    /**
-    * Runs gradient descent through the full neural network.
-    * The `target_out` is the expected output array of the network and is
-    * used to compute the cost function and gradient. Its length must
-    * be equal to this network's output size.
+    * Calculates the error and fills
+    * the last layer's derivative field in preparation for backprop.
     *
-    * This function returns the value of the cost function on this particular
-    * training case. The cost is defined as 0.5 * (target value - actual output)^2
+    * The length of `target_out` MUST be equal to the size of this network's output.
+    * This function returns the value of the error function on this particular
+    * training case. The error is defined as the sum of 0.5 * (target value - actual output)^2
+    * over all the output nodes.
     */
-   pub fn feed_backward(&mut self, target_out: &[NumT]) -> NumT
+   pub fn calculate_error(&mut self, target_out: &[NumT]) -> NumT
    {
       assert_eq!(target_out.len(), self.get_outputs().len());
 
-      // only 1 output node for now.
       let mut error = 0.0;
       for i in 0..self.get_outputs().len()
       {
          let little_omega = target_out[i] - self.get_outputs()[i];
          error += 0.5 * little_omega * little_omega;
-         self.derivs[INPUT_DERIV][i] = little_omega;
+         self.omegas[INPUT_DERIV][i] = little_omega;
       }
+
+      error
+   }
+
+   /**
+    * Runs gradient descent through the full neural network.
+    * The `target_out` is the expected output array of the network and is
+    * used to compute the cost function and gradient. Its length must
+    * be equal to this network's output size.
+    *
+    * This function returns the error value for this training case.
+    * See `NeuralNetwork::calculate_error`
+    */
+   pub fn feed_backward(&mut self, target_out: &[NumT]) -> NumT
+   {
+      let error = self.calculate_error(target_out);
 
       for (index, layer) in self.layers.iter_mut().enumerate().rev()
       {
          // rust cannot let us borrow 2 values from the same array at the same time,
          // so we have to use this hack to appease the borrow checker.
          // The code becomes very ugly since these functions return slices.
-         let (inp_deriv_slice, outp_deriv_slice) = self.derivs.split_at_mut(1);
+         let (inp_deriv_slice, outp_deriv_slice) = self.omegas.split_at_mut(1);
 
          layer.feed_backward(&self.activations[index],
                              self.learn_rate,
@@ -326,19 +326,9 @@ impl NeuralNetwork
          // the derivatives outputted by this layer become the derivatives
          // inputted into the previous layer. This layer's input derivatives
          // will become overwritten.
-         self.derivs.swap(INPUT_DERIV, OUTPUT_DERIV);
+         self.omegas.swap(INPUT_DERIV, OUTPUT_DERIV);
       } // for (index, layer) in self.layers.iter_mut().enumerate().rev()
 
       error
    } // pub fn feed_backward(&mut self, expected_out: &[NumT]) -> NumT
-
-   /// Applies the changes stored in `delta_weights` for each of the layers in the network.
-   /// See documentation for `NetworkLayer::apply_delta_weights` above.
-   pub fn apply_delta_weights(&mut self)
-   {
-      for layer in self.layers.iter_mut()
-      {
-         layer.apply_delta_weights();
-      }
-   }
 } // impl NeuralNetwork

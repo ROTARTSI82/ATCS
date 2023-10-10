@@ -147,7 +147,7 @@ pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, Co
 
       let max_width = *list.iter().max().ok_or(make_err("net topology empty"))? as usize;
       let mk_vec = || vec![0.0; max_width].into_boxed_slice();
-      net.derivs = [mk_vec(), mk_vec()];
+      net.omegas = [mk_vec(), mk_vec()];
    }); // expect_config! Some(IntList(list)), config.get("network_topology")
 
    expect_config!(Some(Text(func)), config.get("activation_function"), {
@@ -413,9 +413,8 @@ fn sigmoid(x: NumT) -> NumT
 
 fn sigmoid_deriv(x: NumT) -> NumT
 {
-   let exp = x.exp();
-   let exp_p1 = exp + 1.0;
-   exp / (exp_p1 * exp_p1)
+   let f_of_x = sigmoid(x);
+   f_of_x * (1.0 - f_of_x)
 }
 
 fn leaky_relu(x: NumT) -> NumT
