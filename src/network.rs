@@ -4,12 +4,12 @@
  * Created on 2023.09.05
  *
  * Defines the NeuralNetwork struct and the methods to
- * run the network and perform gradient descent learning.
+ * run the network and perform backpropagation learning.
  *
  * The `NetworkLayer` and `NeuralNetwork` structs implement the functions
- * `feed_forward` to run on an input, `feed_backward` to perform gradient descent,
- * and `apply_delta_weights` to run gradient descent by applying
- * the changes calculated in gradient descent.
+ * `feed_forward` to run on an input, `feed_backward` to perform backpropagation,
+ * and `apply_delta_weights` to run backpropagation by applying
+ * the changes calculated in backpropagation.
  *
  * This file also defines the `Datapoint` struct for testing and training data.
  */
@@ -18,7 +18,7 @@ use crate::config::{ident, ident_deriv, FuncT, NumT};
 /**
  * These are array indices into `NeuralNetwork::activations`,
  * specifying where to read from and where to write to during the
- * gradient descent step. See `NeuralNetwork::feed_backward` and `NetworkLayer::feed_backward`
+ * backpropagation step. See `NeuralNetwork::feed_backward` and `NetworkLayer::feed_backward`
  */
 const INPUT_DERIV: usize = 0;
 const OUTPUT_DERIV: usize = 1;
@@ -46,7 +46,7 @@ pub struct NeuralNetwork
     * This array stores the input, hidden, and output activations of the network.
     * Index 0 is an array of the inputs to the network, and the last array
     * is the output. Each of the arrays in the middle contain the hidden
-    * layers' activations. These values are needed for gradient descent.
+    * layers' activations. These values are needed for backpropagation.
     *
     * In the design, elements in this array correspond to the a_k values, the h_j values,
     * and the F_i values.
@@ -55,11 +55,11 @@ pub struct NeuralNetwork
 
    /**
     * This array is used to store the partial derivatives
-    * needed for gradient descent. Both arrays are of the same size,
+    * needed for backpropagation. Both arrays are of the same size,
     * that size being equal to "fattest" point of the network
     * (i.e. the maximum number of activations for a layer in the network).
     *
-    * This is just used as scratch space during gradient descent,
+    * This is just used as scratch space during backpropagation,
     * and the values stored here are not of any interest.
     */
    pub omegas: [Box<[NumT]>; 2],
@@ -165,7 +165,7 @@ impl NetworkLayer
       debug_assert_eq!(inp_act_arr.len(), self.num_inputs as usize);
       debug_assert_eq!(dest_h_out_arr.len(), self.num_outputs as usize);
 
-      for out_it in 0..dest_h_out_arr.len()
+      for out_it in 0..self.num_outputs as usize
       {
          let theta = (0..self.num_inputs as usize)
             .map(|in_it| {
@@ -180,51 +180,55 @@ impl NetworkLayer
          {
             self.thetas_out[out_it] = theta;
          }
-      } // for out_it in 0..dest_h_out_arr.len()
+      } // for out_it in 0..self.num_outputs as usize
    } // pub fn feed_forward(&self, inp: &[NumT], out: &mut [NumT], act: FuncT)
 
    /**
-    * Performs gradient descent on this network layer and takes a step
+    * Performs backpropagation on this network layer and takes a step
     * in parameter space (i.e. steps the weights along the gradients to minimize cost).
     *
     * `inp_acts_arr` is an array of the original inputs fed into this layer.
-    * Its length MUST be equal to `self.num_inputs`.
+    * In the design, it corresponds to the `a` vector for the hidden layer
+    * or the `h` vector for the output layer. Its length MUST be equal to `self.num_inputs`.
     *
-    * `learn_rate` is the lambda value, the step size for gradient descent.
+    * `learn_rate` is the lambda value, the step size for backpropagation.
     *
     * `threshold_func_prime` is the derivative of the threshold function that was used
     * in this layer.
     *
-    * `deriv_wrt_out` is the derivative of the cost function with respect to
-    * each of this layer's outputs. Its length MUST be equal to `self.num_outputs`
+    * `prev_omegas` is the derivative of the cost function with respect to
+    * each of this layer's outputs. In the design, it corresponds to the lowercase omega
+    * for the output layer, and the uppercase omega for the hidden layer.
+    * Its length MUST be equal to `self.num_outputs`
     *
-    * `dest_deriv_wrt_inp` is an array to output into, where this function will write
+    * `dest_next_omegas` is an array to output into, where this function will write
     * the derivative of the cost function with respect to each of this layer's inputs.
+    * In the design, it corresponds to the capital omega vector for the output layer.
     * Its length MUST be equal to `self.num_inputs`.
     * This value will then be fed into the `feed_backward` function of the previous layer.
-    * This layer's input is the previous layer's output, so this layer's `dest_deriv_wrt_inp`
-    * becomes the new `deriv_wrt_outp` of the previous layer.
+    * This layer's input is the previous layer's output, so this layer's `dest_next_omegas`
+    * becomes the new `prev_omegas` of the previous layer.
     */
    pub fn feed_backward(&mut self, inp_acts_arr: &[NumT], learn_rate: NumT,
-                        threshold_func_prime: FuncT, deriv_wrt_out: &[NumT],
-                        dest_deriv_wrt_inp: &mut [NumT])
+                        threshold_func_prime: FuncT, prev_omegas: &[NumT],
+                        dest_next_omegas: &mut [NumT])
    {
       debug_assert_eq!(inp_acts_arr.len(), self.num_inputs as usize);
-      debug_assert_eq!(deriv_wrt_out.len(), self.num_outputs as usize);
-      debug_assert_eq!(dest_deriv_wrt_inp.len(), self.num_inputs as usize);
+      debug_assert_eq!(prev_omegas.len(), self.num_outputs as usize);
+      debug_assert_eq!(dest_next_omegas.len(), self.num_inputs as usize);
 
-      dest_deriv_wrt_inp.fill(0.0);
-      for out_it in 0..self.thetas_out.len()
+      dest_next_omegas.fill(0.0);
+      for out_it in 0..self.num_outputs as usize
       {
-         let psi = deriv_wrt_out[out_it] * threshold_func_prime(self.thetas_out[out_it]);
+         let psi = prev_omegas[out_it] * threshold_func_prime(self.thetas_out[out_it]);
 
          debug_assert!(psi.is_finite() && !psi.is_nan());
-         for (in_it, dest_wrt_inp) in dest_deriv_wrt_inp.iter_mut().enumerate()
+         for (in_it, dest_wrt_inp) in dest_next_omegas.iter_mut().enumerate()
          {
             *dest_wrt_inp += psi * self.get_weight(in_it, out_it);
             *self.get_weight_mut(in_it, out_it) += learn_rate * inp_acts_arr[in_it] * psi;
          }
-      } // for out_it in 0..self.thetas_out.len()
+      } // for out_it in 0..self.num_outputs as usize
    } // pub fn feed_backward(...)
 } // impl NetworkLayer
 
@@ -273,7 +277,7 @@ impl NeuralNetwork
     * get_inputs(), and the outputs can be read from the array returned by get_outputs().
     *
     * The generic template variable `WRITE_THETA` controls whether the
-    * intermediate theta values are saved for gradient descent. It should only be true for
+    * intermediate theta values are saved for backpropagation. It should only be true for
     * training, as the theta arrays are not allocated when `do_training` is false.
     */
    pub fn feed_forward<const WRITE_THETA: bool>(&mut self)
@@ -314,7 +318,7 @@ impl NeuralNetwork
    }
 
    /**
-    * Runs gradient descent through the full neural network.
+    * Runs backpropagation through the full neural network.
     * The `target_out` is the expected output array of the network and is
     * used to compute the cost function and gradient. Its length must
     * be equal to this network's output size.

@@ -111,7 +111,7 @@ pub fn make_err(msg: &str) -> std::io::Error
  * One iteration consists of processing all test cases once (also known as an 'epoch').
  * `printout_period` is the period (in number of iterations) for printing keepalive messages.
  * Every `printout_period` iterations, the loss and current step size are printed.
- * `learn_rate` is the step size for gradient descent, and `error_cutoff` is the
+ * `learn_rate` is the step size for backpropagation, and `error_cutoff` is the
  * minimum loss past which we stop training.
  * Loss is defined as the sum of 0.5 * (difference between output and expected values)^2 across
  * all the output nodes and across all the test cases.
@@ -252,6 +252,9 @@ pub fn load_dataset_from_config_txt(net: &NeuralNetwork, config: &BTreeMap<Strin
  * This function supports loading weights from a binary file, or setting them to
  * uniform random values within a specified range (in `config`).
  * Currently, setting the network weights to a fixed value is not yet implemented.
+ *
+ * If the `Boolean` `print_weights` config option is set to true,
+ * the weights of the network are printed to the console after loading them.
  */
 fn set_initialization_mode(net: &mut NeuralNetwork, init_mode: &str,
                            config: &BTreeMap<String, ConfigValue>)
@@ -274,6 +277,21 @@ fn set_initialization_mode(net: &mut NeuralNetwork, init_mode: &str,
       }
       _ => Err(make_err("invalid 'initialization_mode' in config"))?,
    } // match init_mode
+
+   expect_config!(Some(Boolean(print)),
+                  config.get("print_weights"), {
+         if *print
+         {
+            for (layer_no, layer) in net.layers.iter().enumerate()
+            {
+               println!("===== Layer {} weights =====", layer_no);
+               for col in layer.weights.chunks(layer.num_outputs as usize)
+               {
+                  println!("{:#.3?}", col);
+               }
+            }
+         }
+   }); // expect_config!(Some(Boolean(print)), ...)
 
    Ok(())
 } // fn set_initialization_mode(: &mut NeuralNetwork, init_mode: &str, config: ...) -> Result<...>

@@ -1,9 +1,10 @@
 # do_training = false is currently broken bc
 # we depend on thetas_out, which shouldn't be the case
-do_training: false
+do_training: true
+print_weights: false
 max_iterations: int 100000
-error_cutoff: float 2e-4
-learn_rate: float 0.2
+error_cutoff: float 0
+learn_rate: float 0.001
 
 # how often to print out training loss (in # of iterations)
 printout_period: int 16000
