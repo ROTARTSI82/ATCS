@@ -45,7 +45,7 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
       for case in dataset
       {
          network.get_inputs().copy_from_slice(&case.inputs);
-         network.feed_forward();
+         network.feed_forward::<true>();
          loss += network.feed_backward(&case.expected_outputs);
       }
 
@@ -93,7 +93,7 @@ fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
    for case in dataset
    {
       network.get_inputs().copy_from_slice(&case.inputs);
-      network.feed_forward();
+      network.feed_forward::<false>();
       loss += network.calculate_error(&case.expected_outputs);
 
       println!("network {:.2?} = {:.2?} (expected {:.2?})",

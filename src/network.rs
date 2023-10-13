@@ -136,13 +136,13 @@ impl NetworkLayer
     */
    pub fn get_weight(&self, inp_index: usize, out_index: usize) -> &NumT
    {
-      assert!(inp_index < self.num_inputs as usize && out_index < self.num_outputs as usize);
+      debug_assert!(inp_index < self.num_inputs as usize && out_index < self.num_outputs as usize);
       &self.weights[inp_index * self.num_outputs as usize + out_index]
    }
 
    pub fn get_weight_mut(&mut self, inp_index: usize, out_index: usize) -> &mut NumT
    {
-      assert!(inp_index < self.num_inputs as usize && out_index < self.num_outputs as usize);
+      debug_assert!(inp_index < self.num_inputs as usize && out_index < self.num_outputs as usize);
       &mut self.weights[inp_index * self.num_outputs as usize + out_index]
    }
 
@@ -153,22 +153,34 @@ impl NetworkLayer
     *
     * Precondition: `inp_act_arr` must have length equal to `self.num_inputs`
     * and `dest_h_out` must have length equal to `self.num_outputs`.
+    *
+    * The generic template variable `WRITE_THETA` controls whether the
+    * intermediate theta values are saved. It should only be true for
+    * training, as the theta arrays are not allocated when `do_training` is false.
     */
-   pub fn feed_forward(&mut self, inp_act_arr: &[NumT], dest_h_out_arr: &mut [NumT],
-                       threshold_func: FuncT)
+   pub fn feed_forward<const WRITE_THETA: bool>(&mut self, inp_act_arr: &[NumT],
+                                                dest_h_out_arr: &mut [NumT],
+                                                threshold_func: FuncT)
    {
-      assert_eq!(inp_act_arr.len(), self.num_inputs as usize);
-      assert_eq!(dest_h_out_arr.len(), self.num_outputs as usize);
+      debug_assert_eq!(inp_act_arr.len(), self.num_inputs as usize);
+      debug_assert_eq!(dest_h_out_arr.len(), self.num_outputs as usize);
 
       for out_it in 0..dest_h_out_arr.len()
       {
-         self.thetas_out[out_it] = (0..self.num_inputs as usize)
+         let theta = (0..self.num_inputs as usize)
             .map(|in_it| {
                self.get_weight(in_it, out_it) * inp_act_arr[in_it]
             }).sum::<NumT>();
 
-         dest_h_out_arr[out_it] = threshold_func(self.thetas_out[out_it]);
-      }
+         dest_h_out_arr[out_it] = threshold_func(theta);
+
+         // this is NOT a conditional checked at runtime.
+         // this is evaluated at compile time as WRITE_THETA is a template variable.
+         if WRITE_THETA
+         {
+            self.thetas_out[out_it] = theta;
+         }
+      } // for out_it in 0..dest_h_out_arr.len()
    } // pub fn feed_forward(&self, inp: &[NumT], out: &mut [NumT], act: FuncT)
 
    /**
@@ -197,16 +209,16 @@ impl NetworkLayer
                         threshold_func_prime: FuncT, deriv_wrt_out: &[NumT],
                         dest_deriv_wrt_inp: &mut [NumT])
    {
-      assert_eq!(inp_acts_arr.len(), self.num_inputs as usize);
-      assert_eq!(deriv_wrt_out.len(), self.num_outputs as usize);
-      assert_eq!(dest_deriv_wrt_inp.len(), self.num_inputs as usize);
+      debug_assert_eq!(inp_acts_arr.len(), self.num_inputs as usize);
+      debug_assert_eq!(deriv_wrt_out.len(), self.num_outputs as usize);
+      debug_assert_eq!(dest_deriv_wrt_inp.len(), self.num_inputs as usize);
 
       dest_deriv_wrt_inp.fill(0.0);
       for out_it in 0..self.thetas_out.len()
       {
          let psi = deriv_wrt_out[out_it] * threshold_func_prime(self.thetas_out[out_it]);
 
-         assert!(psi.is_finite() && !psi.is_nan());
+         debug_assert!(psi.is_finite() && !psi.is_nan());
          for (in_it, dest_wrt_inp) in dest_deriv_wrt_inp.iter_mut().enumerate()
          {
             *dest_wrt_inp += psi * self.get_weight(in_it, out_it);
@@ -259,8 +271,12 @@ impl NeuralNetwork
     * Runs the full neural network forwards.
     * The inputs into the network should be written into the array returned by
     * get_inputs(), and the outputs can be read from the array returned by get_outputs().
+    *
+    * The generic template variable `WRITE_THETA` controls whether the
+    * intermediate theta values are saved for gradient descent. It should only be true for
+    * training, as the theta arrays are not allocated when `do_training` is false.
     */
-   pub fn feed_forward(&mut self)
+   pub fn feed_forward<const WRITE_THETA: bool>(&mut self)
    {
       for (index, layer) in self.layers.iter_mut().enumerate()
       {
@@ -269,7 +285,7 @@ impl NeuralNetwork
 
          let input_arr = &input_slice[index];
          let dest_output_arr = &mut output_slice[0];
-         layer.feed_forward(input_arr, dest_output_arr, self.threshold_func);
+         layer.feed_forward::<WRITE_THETA>(input_arr, dest_output_arr, self.threshold_func);
       }
    } // pub fn feed_forward(&mut self)
 
@@ -284,7 +300,7 @@ impl NeuralNetwork
     */
    pub fn calculate_error(&mut self, target_out: &[NumT]) -> NumT
    {
-      assert_eq!(target_out.len(), self.get_outputs().len());
+      debug_assert_eq!(target_out.len(), self.get_outputs().len());
 
       let mut error = 0.0;
       for i in 0..self.get_outputs().len()
