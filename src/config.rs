@@ -30,13 +30,17 @@ use std::fs::File;
 use std::io::Read;
 use std::ops::Range;
 
-/// The type of the values contained in the network
-/// has been extracted to a type variable for easy modification.
+/**
+ * The type of the values contained in the network
+ * has been extracted to a type variable for easy modification.
+ */
 pub type NumT = f64;
 pub type FuncT = fn(NumT) -> NumT;
 
-/// A union of the possible values contained in the configuration file.
-/// This type is used to store the configuration in a key:value map.
+/**
+ * A union of the possible values contained in the configuration file.
+ * This type is used to store the configuration in a key:value map.
+ */
 #[derive(Debug)]
 pub enum ConfigValue
 {
@@ -48,8 +52,10 @@ pub enum ConfigValue
    Boolean(bool),
 }
 
-/// These are the parameters of the configuration that are printed out
-/// before running the network.
+/**
+ * These are the parameters of the configuration that are printed out
+ * before running the network.
+ */
 const PARAMS_TO_PRINT: [&str; 6] = ["rand_lo",
                                     "rand_hi",
                                     "network_topology",

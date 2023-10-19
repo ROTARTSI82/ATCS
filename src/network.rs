@@ -7,9 +7,7 @@
  * run the network and perform backpropagation learning.
  *
  * The `NetworkLayer` and `NeuralNetwork` structs implement the functions
- * `feed_forward` to run on an input, `feed_backward` to perform backpropagation,
- * and `apply_delta_weights` to run backpropagation by applying
- * the changes calculated in backpropagation.
+ * `feed_forward` to run on an input, `feed_backward` to perform backpropagation.
  *
  * This file also defines the `Datapoint` struct for testing and training data.
  */
@@ -23,8 +21,10 @@ use crate::config::{ident, ident_deriv, FuncT, NumT};
 const INPUT_DERIV: usize = 0;
 const OUTPUT_DERIV: usize = 1;
 
-/// A datapoint in the dataset with an input value and
-/// (optionally for training) the expected output. Used for test and train data.
+/**
+ * A datapoint in the dataset with an input value and
+ * (optionally for training) the expected output. Used for test and train data.
+ */
 #[derive(Debug)]
 pub struct Datapoint
 {
@@ -81,25 +81,33 @@ pub struct NeuralNetwork
    pub do_training: bool,
 } // pub struct NeuralNetwork
 
-/// Represents an individual hidden (or output) layer in the network.
-/// Stores both the weight array and, in the case of training, the delta weights.
+/**
+ * Represents an individual hidden (or output) layer in the network.
+ * Stores both the weight array and, in the case of training, the delta weights.
+ */
 #[derive(Debug)]
 pub struct NetworkLayer
 {
-   /// The weights and delta_weights matrices are flattened stored in row-major order.
+   /// The weight matrix is flattened stored in row-major order.
    pub weights: Box<[NumT]>,
+
+   /**
+    * This is the result of the matrix-vector product of this layer,
+    * before it is passed into the activation function.
+    */
    pub thetas_out: Box<[NumT]>,
 
    pub num_inputs: i32,
    pub num_outputs: i32,
-}
+} // struct NetworkLayer
 
 impl NetworkLayer
 {
    /**
     * Allocates memory for a neural network layer according to the dimensions
     * of the inputs and outputs specified by `num_inputs` and `num_outputs`.
-    * If `do_train` is true, this function also allocates a `delta_weights` array.
+    * If `do_train` is true, this function also allocates a `thetas_out` array,
+    * as those values only need to be saved for computing gradients during training.
     *
     * This function fills the fields of the network with dummy values.
     * See `set_and_echo_config` in `config.rs` for the code to initialize the network.
@@ -181,7 +189,7 @@ impl NetworkLayer
             self.thetas_out[out_it] = theta;
          }
       } // for out_it in 0..self.num_outputs as usize
-   } // pub fn feed_forward(&self, inp: &[NumT], out: &mut [NumT], act: FuncT)
+   } // pub fn feed_forward<...>(&self, inp: &[NumT], out: &mut [NumT], act: FuncT)
 
    /**
     * Performs backpropagation on this network layer and takes a step
@@ -257,15 +265,19 @@ impl NeuralNetwork
       } // NeuralNetwork
    } // pub fn new() -> NeuralNetwork
 
-   /// Gets a mutable reference to the input array of the network.
-   /// `feed_forward` reads its input from here.
+   /**
+    * Gets a mutable reference to the input array of the network.
+    * `feed_forward` reads its input from here.
+    */
    pub fn get_inputs(&mut self) -> &mut [NumT]
    {
       &mut self.activations[0]
    }
 
-   /// Gets the array of the outputs of the network.
-   /// `feed_forward` will write its output here.
+   /**
+    * Gets the array of the outputs of the network.
+    * `feed_forward` will write its output here.
+    */
    pub fn get_outputs(&self) -> &[NumT]
    {
       &self.activations[self.activations.len() - 1]
@@ -284,14 +296,14 @@ impl NeuralNetwork
    {
       for (index, layer) in self.layers.iter_mut().enumerate()
       {
-         // hack to appease the borrow checker. see note in `NeuralNetwork::feed_forward`.
+         // we must split the slice into 2 halves to borrow 2 mutable values at the same time
          let (input_slice, output_slice) = self.activations.split_at_mut(index + 1);
 
          let input_arr = &input_slice[index];
          let dest_output_arr = &mut output_slice[0];
          layer.feed_forward::<WRITE_THETA>(input_arr, dest_output_arr, self.threshold_func);
       }
-   } // pub fn feed_forward(&mut self)
+   } // pub fn feed_forward<const WRITE_THETA: bool>(&mut self)
 
    /**
     * Calculates the error and fills
@@ -315,7 +327,7 @@ impl NeuralNetwork
       }
 
       error
-   }
+   } // fn calculate_error(&mut self, target_out: &[NumT]) -> NumT
 
    /**
     * Runs backpropagation through the full neural network.
@@ -332,9 +344,8 @@ impl NeuralNetwork
 
       for (index, layer) in self.layers.iter_mut().enumerate().rev()
       {
-         // rust cannot let us borrow 2 values from the same array at the same time,
-         // so we have to use this hack to appease the borrow checker.
-         // The code becomes very ugly since these functions return slices.
+         // rust's borrow checking will not allow us to borrow 2 mutable values from the
+         // same slice at the same time, so we must split the slice into 2 halves first.
          let (inp_deriv_slice, outp_deriv_slice) = self.omegas.split_at_mut(1);
 
          layer.feed_backward(&self.activations[index],
@@ -350,5 +361,5 @@ impl NeuralNetwork
       } // for (index, layer) in self.layers.iter_mut().enumerate().rev()
 
       error
-   } // pub fn feed_backward(&mut self, expected_out: &[NumT]) -> NumT
+   } // pub fn feed_backward(&mut self, target_out: &[NumT]) -> NumT
 } // impl NeuralNetwork

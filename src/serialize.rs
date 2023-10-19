@@ -145,6 +145,7 @@ pub fn read_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(),
             .try_into()
             .map_err(|_| make_err("corrupt layer size"))?,
       );
+
       if model_out != layer.num_outputs
       {
          Err(make_err(format!("model file layer {} is {} outputs, config is {} outputs",
