@@ -75,8 +75,8 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
       println!("\t+ Reached maximum number of iterations");
    }
 
-   let ms = duration.as_millis() as NumT;
-   println!("\nTrained in {} seconds ({}ms per iteration, {}ms per case)",
+   let ms = (duration.as_micros() as NumT) / 1000.0;
+   println!("\nTrained in {:.4} seconds ({:.4}ms per epoch, {:.4}ms per case)",
             duration.as_secs_f64(),
             ms / iteration as NumT,
             ms / (dataset.len() as NumT * iteration as NumT));
@@ -90,17 +90,23 @@ fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
 {
    println!("\nTruth table");
    let mut loss = 0.0;
+
+   let start = std::time::Instant::now();
    for case in dataset
    {
       network.get_inputs().copy_from_slice(&case.inputs);
       network.feed_forward::<false>();
       loss += network.calculate_error(&case.expected_outputs);
 
-      println!("network {:?} = {:?} (expected {:?})",
+      println!("network {:.3?} = {:.3?} (expected {:.3?})",
                case.inputs,
                network.get_outputs(),
                case.expected_outputs);
    } // for case in dataset
+
+   let diff = start.elapsed();
+   let ms = (diff.as_micros() as NumT) / 1000.0;
+   println!("Ran epoch in {:.4}ms ({:.4}ms per case)", ms, ms / dataset.len() as NumT);
 
    loss /= dataset.len() as NumT;
    println!("final loss: {}\n", loss);
