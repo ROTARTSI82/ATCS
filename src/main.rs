@@ -5,8 +5,7 @@
  *
  * Command-line utility to run a neural network according to a
  * configuration file specified as a command-line argument.
- * Optionally, this utility can run training with backpropagation
- * and backpropagation.
+ * Optionally, this utility can run training with backpropagation.
  *
  * See documentation for `parse_config`, `set_and_echo_config`,
  * and `load_dataset_from_config_txt` in `config.rs`
@@ -98,7 +97,7 @@ fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
       network.feed_forward::<false>();
       loss += network.calculate_error(&case.expected_outputs);
 
-      println!("network {:.3?} = {:.3?} (expected {:.3?})",
+      println!("network {:.2?} = {:?} (expected {:.2?})",
                case.inputs,
                network.get_outputs(),
                case.expected_outputs);

@@ -114,24 +114,21 @@ impl NetworkLayer
     */
    pub fn new(num_inputs: i32, num_outputs: i32, do_training: bool) -> NetworkLayer
    {
-      let cond_allocate = |size: usize| {
-         if do_training
-         {
-            vec![0.0; size].into_boxed_slice()
-         }
-         else
-         {
-            Box::new([])
-         }
-      };
-
       NetworkLayer
       {
          num_inputs,
          num_outputs,
          weights: vec![0.0; (num_inputs * num_outputs) as usize].into_boxed_slice(),
-         thetas_out: cond_allocate(num_outputs as usize)
-      }
+
+         thetas_out: if do_training
+         {
+            vec![0.0; num_outputs as usize].into_boxed_slice()
+         }
+         else
+         {
+            Box::new([])
+         }
+      } // NetworkLayer
    } // fn new(num_inputs: i32, num_outputs: i32, do_training: bool) -> NetworkLayer
 
    /**
@@ -176,14 +173,15 @@ impl NetworkLayer
       for out_it in 0..self.num_outputs as usize
       {
          let theta = (0..self.num_inputs as usize)
-            .map(|in_it| {
-               self.get_weight(in_it, out_it) * inp_act_arr[in_it]
-            }).sum::<NumT>();
+            .map(|in_it| self.get_weight(in_it, out_it) * inp_act_arr[in_it])
+            .sum::<NumT>();
 
          dest_h_out_arr[out_it] = threshold_func(theta);
 
-         // this is NOT a conditional checked at runtime.
-         // this is evaluated at compile time as WRITE_THETA is a template variable.
+         /*
+          * this is NOT a conditional checked at runtime.
+          * this is evaluated at compile time as WRITE_THETA is a template variable.
+          */
          if WRITE_THETA
          {
             self.thetas_out[out_it] = theta;
@@ -225,18 +223,17 @@ impl NetworkLayer
       debug_assert_eq!(prev_omegas.len(), self.num_outputs as usize);
       debug_assert_eq!(dest_next_omegas.len(), self.num_inputs as usize);
 
-      dest_next_omegas.fill(0.0);
-      for out_it in 0..self.num_outputs as usize
+      for (in_it, dest_wrt_inp) in dest_next_omegas.iter_mut().enumerate()
       {
-         let psi = prev_omegas[out_it] * threshold_func_prime(self.thetas_out[out_it]);
-
-         debug_assert!(psi.is_finite() && !psi.is_nan());
-         for (in_it, dest_wrt_inp) in dest_next_omegas.iter_mut().enumerate()
+         *dest_wrt_inp = (0..self.num_outputs as usize).map(|out_it|
          {
-            *dest_wrt_inp += psi * self.get_weight(in_it, out_it);
+            let psi = prev_omegas[out_it] * threshold_func_prime(self.thetas_out[out_it]);
+            debug_assert!(psi.is_finite() && !psi.is_nan());
+
             *self.get_weight_mut(in_it, out_it) += learn_rate * inp_acts_arr[in_it] * psi;
-         }
-      } // for out_it in 0..self.num_outputs as usize
+            psi * self.get_weight(in_it, out_it)
+         }).sum(); // (0..self.num_inputs as usize).map(...).sum()
+      } // for (in_it, dest_wrt_inp) in dest_next_omegas.iter_mut().enumerate()
    } // pub fn feed_backward(...)
 } // impl NetworkLayer
 
@@ -344,8 +341,10 @@ impl NeuralNetwork
 
       for (index, layer) in self.layers.iter_mut().enumerate().rev()
       {
-         // rust's borrow checking will not allow us to borrow 2 mutable values from the
-         // same slice at the same time, so we must split the slice into 2 halves first.
+         /*
+          * rust's borrow checking will not allow us to borrow 2 mutable values from the
+          * same slice at the same time, so we must split the slice into 2 halves first.
+          */
          let (inp_deriv_slice, outp_deriv_slice) = self.omegas.split_at_mut(1);
 
          layer.feed_backward(&self.activations[index],
@@ -354,9 +353,11 @@ impl NeuralNetwork
                              &inp_deriv_slice[0][..layer.num_outputs as usize],
                              &mut outp_deriv_slice[0][..layer.num_inputs as usize]);
 
-         // the derivatives outputted by this layer become the derivatives
-         // inputted into the previous layer. This layer's input derivatives
-         // will become overwritten.
+         /*
+          * the derivatives outputted by this layer become the derivatives
+          * inputted into the previous layer. This layer's input derivatives
+          * will become overwritten.
+          */
          self.omegas.swap(INPUT_DERIV, OUTPUT_DERIV);
       } // for (index, layer) in self.layers.iter_mut().enumerate().rev()
 

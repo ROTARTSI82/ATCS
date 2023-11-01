@@ -143,7 +143,8 @@ pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, Co
                   config.get("do_training"),
                   net.do_training = *train);
 
-   expect_config!(Some(IntList(list)), config.get("network_topology"), {
+   expect_config!(Some(IntList(list)), config.get("network_topology"), 
+   {
       net.layers =
          (0..list.len() - 1).map(|it| NetworkLayer::new(list[it], list[it + 1], net.do_training))
                             .collect();
@@ -156,7 +157,8 @@ pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, Co
       net.omegas = [mk_vec(), mk_vec()];
    }); // expect_config! Some(IntList(list)), config.get("network_topology")
 
-   expect_config!(Some(Text(func)), config.get("activation_function"), {
+   expect_config!(Some(Text(func)), config.get("activation_function"), 
+   {
       (net.threshold_func, net.threshold_func_deriv) = match func.as_str()
       {
          "identity" => (ident as FuncT, ident_deriv as FuncT),
@@ -323,7 +325,7 @@ fn randomize_network(net: &mut NeuralNetwork, range: Range<NumT>)
  * Ok(BTreeMap), which maps from String to ConfigValues.
  *
  * Lines starting with '#' are ignored as comments, as are blank lines.
- * Every other line should be a key-value pair seperated by a colon ("key: value").
+ * Every other line should be a key-value pair separated by a colon ("key: value").
  * Keys can be any string that does not contain a colon, and values can be
  * the types supported by `ConfigValue`.
  *
