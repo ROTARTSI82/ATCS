@@ -6,8 +6,10 @@
  * Contains two utility functions for serializing and deserializing
  * full NeuralNetwork weights to a binary file.
  *
- * Exports the following functions:
+ * Table of contents:
  * `fn write_net_to_file(net: &NeuralNetwork, filename: &str) -> Result<(), std::io::Error>`
+ * `fn consume_i32(list: &[u8]) -> Result<i32, std::io::Error>`
+ * `fn consume_num(list: &[u8]) -> Result<NumT, std::io::Error>`
  * `fn read_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(), std::io::Error>`
  */
 use crate::config::{make_err, NumT};

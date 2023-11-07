@@ -10,6 +10,11 @@
  * See documentation for `parse_config`, `set_and_echo_config`,
  * and `load_dataset_from_config_txt` in `config.rs`
  * for more info about the configuration format.
+ *
+ * Table of Contents:
+ * `fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)`
+ * `fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)`
+ * `fn main() -> Result<(), Box<dyn Error>>`
  */
 mod config;
 mod network;

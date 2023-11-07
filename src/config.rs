@@ -7,18 +7,32 @@
  * and initializing the neural network based on the specified configurations.
  *
  * The `ConfigValue` union type is defined to store the values
- * from the configuration file.
+ * from the configuration file (whether it is text, an integer, a float, or a list).
  *
- * The function `parse_config` reads the configuration file,
- * `set_and_echo_config` initializes the network according to the configuration,
- * and `load_dataset_from_config_txt` extracts the dataset from the config.
- *
- * The following activation functions (and derivatives) are defined:
- * `sigmoid`, `sigmoid_deriv`, `ident`, `ident_deriv`, `tanh`, `tanh_deriv`
- *
- * Also defines the following types:
+ * Types:
  * `NumT` (for the type of network weights and values),
- * and `FuncT` (for activation functions and their derivatives)
+ * `FuncT` (for activation functions and their derivatives)
+ *
+ * Table of contents:
+ * ```pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, ConfigValue>)
+ *                               -> Result<(), std::io::Error>```
+ * ```pub fn load_dataset_from_config_txt(net: &NeuralNetwork,
+ *                                        config: &BTreeMap<String, ConfigValue>,
+ *                                        dataset_out: &mut Vec<Datapoint>)
+ *                                        -> Result<(), std::io::Error>```
+ * ```fn set_initialization_mode(net: &mut NeuralNetwork, init_mode: &str,
+ *                               config: &BTreeMap<String, ConfigValue>)
+ *                               -> Result<(), std::io::Error>```
+ * `fn randomize_network(net: &mut NeuralNetwork, range: Range<NumT>)`
+ * `pub fn parse_config(filename: &str) -> Result<BTreeMap<String, ConfigValue>, std::io::Error>`
+ * `pub fn sigmoid(x: NumT) -> NumT`
+ * `pub fn sigmoid_deriv(x: NumT) -> NumT`
+ * `pub fn ident(x: NumT) -> NumT`
+ * `pub fn ident_deriv(x: NumT) -> NumT`
+ * `pub fn leaky_relu(x: NumT) -> NumT`
+ * `pub fn leaky_relu_deriv(x: NumT) -> NumT`
+ * `pub fn tanh(x: NumT) -> NumT`
+ * `pub fn tanh_deriv(x: NumT) -> NumT`
  */
 use crate::config::ConfigValue::{Boolean, FloatList, IntList, Integer, Numeric, Text};
 use crate::network::{Datapoint, NetworkLayer, NeuralNetwork};
@@ -107,7 +121,7 @@ pub fn make_err(msg: &str) -> std::io::Error
  * including the final output layer.
  *
  * `do_training` MUST be a `Boolean` specifying whether to train the network.
- * If it is true, extra memory must be allocated to store the delta weights.
+ * If it is true, extra memory must be allocated to store the thetas_out
  *
  * If `do_training` is true, the following values are also required:
  * `Integer` values of `max_iterations` and `printout_period`,
@@ -422,16 +436,6 @@ pub fn parse_config(filename: &str) -> Result<BTreeMap<String, ConfigValue>, std
  * The identity function, hyperbolic tangent, logistic sigmoid, and leaky ReLU.
  */
 
-pub fn ident(x: NumT) -> NumT
-{
-   x
-}
-
-pub fn ident_deriv(_: NumT) -> NumT
-{
-   1.0
-}
-
 fn sigmoid(x: NumT) -> NumT
 {
    1.0 / (1.0 + (-x).exp())
@@ -441,6 +445,16 @@ fn sigmoid_deriv(x: NumT) -> NumT
 {
    let f_of_x = sigmoid(x);
    f_of_x * (1.0 - f_of_x)
+}
+
+pub fn ident(x: NumT) -> NumT
+{
+   x
+}
+
+pub fn ident_deriv(_: NumT) -> NumT
+{
+   1.0
 }
 
 fn leaky_relu(x: NumT) -> NumT

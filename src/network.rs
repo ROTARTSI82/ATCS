@@ -6,10 +6,27 @@
  * Defines the NeuralNetwork struct and the methods to
  * run the network and perform backpropagation learning.
  *
- * The `NetworkLayer` and `NeuralNetwork` structs implement the functions
- * `feed_forward` to run on an input, `feed_backward` to perform backpropagation.
+ * Table of contents:
+ * `Datapoint`: a container for testing and training data
  *
- * This file also defines the `Datapoint` struct for testing and training data.
+ * `NetworkLayer`
+ *    `pub fn new(num_inputs: i32, num_outputs: i32, do_training: bool) -> NetworkLayer`
+ *    `pub fn get_weight(&self, inp_index: usize, out_index: usize) -> &NumT`
+ *    `pub fn get_weight_mut(&mut self, inp_index: usize, out_index: usize) -> &mut NumT`
+ *    ```pub fn feed_forward<const WRITE_THETA: bool>(&mut self, inp_act_arr: &[NumT],
+ *                                                  dest_h_out_arr: &mut [NumT],
+ *                                                  threshold_func: FuncT)```
+ *    ```pub fn feed_backward(&mut self, inp_acts_arr: &[NumT], learn_rate: NumT,
+ *                          threshold_func_prime: FuncT, prev_omegas: &[NumT],
+ *                          dest_next_omegas: &mut [NumT])```
+ *
+ * `NeuralNetwork`
+ *    `pub fn new() -> NeuralNetwork`
+ *    `pub fn get_inputs(&mut self) -> &mut [NumT]`
+ *    `pub fn get_outputs(&self) -> &[NumT]`
+ *    `pub fn feed_forward<const WRITE_THETA: bool>(&mut self)`
+ *    `pub fn calculate_error(&mut self, target_out: &[NumT]) -> NumT`
+ *    `pub fn feed_backward(&mut self, target_out: &[NumT]) -> NumT`
  */
 use crate::config::{ident, ident_deriv, FuncT, NumT};
 
@@ -37,8 +54,9 @@ pub struct Datapoint
 pub struct NeuralNetwork
 {
    /**
-    * Stores the weight matrix (and possibly delta weights) of each
-    * layer, along with the layer's dimensions. See `NetworkLayer` for more information.
+    * Stores the weight matrix of each layer, along with the layer's dimensions.
+    * When training, the layer's outputs before applying the activation function are also stored.
+    * See `NetworkLayer` for more information.
     */
    pub layers: Box<[NetworkLayer]>,
 
@@ -83,7 +101,8 @@ pub struct NeuralNetwork
 
 /**
  * Represents an individual hidden (or output) layer in the network.
- * Stores both the weight array and, in the case of training, the delta weights.
+ * Stores both the weight array and, in the case of training, the thetas outputted.
+ * The thetas are the outputs of this layer prior to applying the activation function.
  */
 #[derive(Debug)]
 pub struct NetworkLayer
