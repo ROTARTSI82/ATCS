@@ -1,5 +1,6 @@
 import torch
 import chess
+import chess.pgn
 import math
 
 from torch.nn import Linear
@@ -8,15 +9,15 @@ import functools, random
 
 dtype = torch.float32
 device = torch.device('cuda')
-chunk = 960 * 128 * 2
+chunk = 64
 
 
 def pos_encode(val, num, val_max):
     # bug: i/2 should be i//2 but too late! i've already trained around that
-    return [val / val_max] + [math.sin(math.pi * val / 2**(i/2)) for i in range(num*2)]
+    return [val / val_max] + [(math.sin if i%2 == 0 else math.cos)(math.pi * val / 2**(i//2)) for i in range(num*2)]
 
 
-def preprocess(pos: chess.Board):
+def preprocess(pos: chess.Board, moves):
     ret = []
     move_enc = []
     is_white = pos.turn == chess.WHITE
@@ -40,7 +41,7 @@ def preprocess(pos: chess.Board):
             encoding += pos_encode(pos.fullmove_number / 16, 4, 6)
             ret.append(encoding)
 
-    for move in pos.legal_moves:
+    for move in moves:
         coords = [func(sq) for func in (chess.square_rank, chess.square_file)
                   for sq in (move.from_square, move.to_square)]
 
@@ -57,98 +58,122 @@ def preprocess(pos: chess.Board):
 class Model(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.pos_in = torch.nn.Sequential(Linear(54, 512, bias=False, dtype=dtype), torch.nn.GELU())
-        self.moves_in = torch.nn.Sequential(Linear(29, 512, bias=False, dtype=dtype), torch.nn.GELU())
-        self.trans = torch.nn.Transformer(d_model=512, nhead=8, num_encoder_layers=8, num_decoder_layers=8,
-                                          dim_feedforward=2048, bias=True, activation=torch.nn.GELU(),
-                                          norm_first=True, batch_first=True, dropout=0.1, dtype=dtype)
-        self.final_output = Linear(512, 1, bias=False, dtype=dtype)
-        self.softmax = torch.nn.Softmax(dim=0)
+        self.pos_in = torch.nn.Sequential(Linear(54, 256, bias=True, dtype=dtype),
+                                          torch.nn.GELU()
+                                          )
+        self.moves_in = torch.nn.Sequential(Linear(29, 256, bias=True, dtype=dtype),
+                                            torch.nn.GELU()
+                                            )
+        self.trans = torch.nn.Transformer(d_model=256, nhead=4, num_encoder_layers=8, num_decoder_layers=8,
+                                          dim_feedforward=1024, bias=False,
+                                          norm_first=False, batch_first=True, dropout=0.01, dtype=dtype)
+        self.final_output = torch.nn.Sequential(Linear(256, 1, bias=True, dtype=dtype),
+                                                torch.nn.Softmax(dim=0))
 
     def forward(self, encoder, decoder):
-        to_dec = self.moves_in(decoder)
-        to_enc = self.pos_in(encoder)
-        transformer = self.trans(to_enc, to_dec)
-        return self.softmax(self.final_output(transformer).view(-1))
+        return self.final_output(self.trans(self.pos_in(encoder), self.moves_in(decoder))).view(-1)
 
 
 print("pytorch loaded - constructing model")
-model = Model().to(device).train(False)
-
-opt = torch.optim.AdamW(model.parameters(), lr=1e-4, eps=1e-5, betas=(0.9, 0.95), weight_decay=0.1)
+model = Model().to(device).train(True)
+opt = torch.optim.Adam(model.parameters(), lr=1e-3, eps=1e-5, betas=(0.9, 0.95), weight_decay=0.01)
 # sched = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, gamma=0.975)
 loss_fn = torch.nn.CrossEntropyLoss()
 
 dim = sum([functools.reduce(lambda a, b: a * b, list(parameter.shape)) for parameter in model.parameters()])
 print(f"dim={dim}")
 
-# last_case = 0
-# dicts = torch.load('modelv2.txt')
-# model.load_state_dict(dicts['model'])
-# # opt.load_state_dict(dicts['optim'])
-# # sched.load_state_dict(dicts['sched'])
-# last_case = dicts['last_case']
-# del dicts
-print('constructed model')
+model.load_state_dict(torch.load('bigcarlsen.txt'))
+print(model)
+print(type(model))
 
 print(__name__)
 if __name__ == "__main__":
-    model = model.train(True)
-    loss_history = [0]
 
-    print('reading dataset')
-    with open("/home/shared/chess/lichess_db_puzzle.csv", "r") as fp:
-        lines = [line.split(',') for line in fp.read().split('\n')[1:] if line]
-        random.shuffle(lines)
-        lines = sorted(lines, key=lambda x: int(x[3]) - (1000 if "opening" in x[7] else 0) - (200 if "advantage" in x[7] else 0) + (100 if "mate" in x[7] else 0))
+    print('model loaded - reading dataset')
+    # with open("/home/shared/chess/lichess_db_puzzle.csv", "r") as fp:
+    #     lines = [line.split(',') for line in fp.read().split('\n')[1:] if line]
+    #     random.shuffle(lines)
+    #     lines = sorted(lines, key=lambda x: int(x[3]) - (1000 if "opening" in x[7] else 0) - (200 if "advantage" in x[7] else 0) + (100 if "mate" in x[7] else 0))
+    games = []
+    with open("/home/shared/chess/Carlsen.pgn" if True else "/home/shared/chess/lichess_db_standard_rated_2016-02.pgn", 'r') as fp:
+        for i in range(chunk):
+            g = chess.pgn.read_game(fp)
+            if g is None:
+                break
+            games.append(g)
+    random.shuffle(games)
+    games = chunk*[games[0]]
+    print(games[0])
     print('dataset read')
 
-    to_train = lines[last_case:last_case+chunk]
-    tot = len(to_train)
+    tot = len(games)
     board = chess.Board()
 
     tot_pass = 0
     tot_seen = 0
-
-    for case, puzzle in enumerate(to_train):
-        moves = [chess.Move.from_uci(m) for m in puzzle[2].split(' ')]
-        print(f"{case}/{tot}\t{100*case/tot:.2f}%\t{loss_history[-1]:.5f}\t{puzzle[3]}\t{puzzle}")
-        board.set_fen(puzzle[1])
+    loss_history = [0]
+    for case, game in enumerate(games):
+        # moves = [chess.Move.from_uci(m) for m in puzzle[2].split(' ')]
+        print(f"{case}/{tot}\t{100*case/tot:.2f}%\t{loss_history[-1]:.5f}")
+        board = game.board()
         passed = 0
-
-        for best in moves:
-            for idx, legal in enumerate(board.legal_moves):
+        tot_mov = 0
+        opt.zero_grad()
+        loss_accum = None
+        for best in game.mainline_moves():
+            tot_mov += 1
+            movs = list(board.legal_moves)
+            for idx, legal in enumerate(movs):
                 if legal == best:
-                    enc, mov_enc = preprocess(board)
+                    # opt.zero_grad()  # !!
 
-                    opt.zero_grad()
+                    enc, mov_enc = preprocess(board, movs)
                     out = model(enc, mov_enc)
                     passed += int(torch.argmax(out) == idx)
 
                     expected = torch.zeros(list(out.shape)[0], device=device, dtype=dtype)
                     expected[idx] = 1
 
-                    loss = loss_fn(out, expected)
-                    # loss = -torch.log(out[idx])
-                    loss_history.append(float(loss))
-                    loss.backward()
-                    opt.step()
+                    iloss = loss_fn(out, expected)
+                    # iloss = -torch.log(out[idx])
+                    if loss_accum is None:
+                        loss_accum = iloss
+                        # loss_accum.backward()
+                        # opt.step()
+                        # loss_history.append(float(loss_accum))
+                        # loss_accum = None
+                    else:
+                        loss_accum += iloss
                     break
             else:
                 print("illegal move?")
             board.push(best)
 
+        if tot_mov == 0:
+            print("empty game")
+            continue
+
+        loss_accum /= float(tot_mov)
+        loss_history.append(float(loss_accum))
+        loss_accum.backward()
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        opt.step()
+
         tot_pass += passed
-        tot_seen += len(moves)
-        print(f"passed {passed}/{len(moves)} = {100*passed/(len(moves)):.2f}%\t{100*tot_pass/tot_seen}")
+        tot_seen += tot_mov
+        print(f"passed {passed}/{tot_mov} = {100*passed/tot_mov:.2f}%\t{100*tot_pass/tot_seen}")
 
         if case % 128 == 0:
             print(f"\n============\ttotal = {100*tot_pass/tot_seen}\t============\n")
             tot_pass = tot_seen = 0
             # sched.step()
 
-    # torch.save({'model': model.state_dict(),
-    #             'optim': opt.state_dict(),  # 'sched': sched.state_dict(),
-    #             'last_case': last_case + chunk}, 'modelv2.txt')
-    with open("loss.csv", 'w') as fp:
+    torch.save(model.state_dict(), 'bigcarlsen.txt')
+    #print(model.state_dict())
+    #print([i.grad for i in model.parameters()])
+    # model_raw.eval()
+    # torch.save(model_raw.state_dict(), 'test.txt')
+    # torch.jit.script(model_raw).save('small.pt')  # Save
+    with open("loss2.csv", 'w') as fp:
         fp.write(",".join([str(i) for i in loss_history]))

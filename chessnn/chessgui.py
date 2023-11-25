@@ -27,7 +27,8 @@ def to_sq(sel):
 images = dict([load(('w' if color == chess.WHITE else 'b') + chess.piece_name(piece))
                for piece in chess.PIECE_TYPES for color in chess.COLORS])
 
-probs = model(*preprocess(board))
+legals = list(board.legal_moves)
+probs = model(*preprocess(board, legals))
 bestmove = torch.argmax(probs)
 
 while running:
@@ -43,9 +44,10 @@ while running:
                 print(mov)
                 if board.is_legal(mov):
                     board.push(mov)
-                    probs = model(*preprocess(board))
+                    legals = list(board.legal_moves)
+                    probs = model(*preprocess(board, legals))
                     bestmove = torch.argmax(probs)
-                    print(f"bestmove {[i for i in board.legal_moves][bestmove]}")
+                    print(f"bestmove {legals[bestmove]}, raw = {probs}")
                 selection = None
 
     screen.fill("black")
@@ -63,7 +65,7 @@ while running:
                 surf.fill((255, 255, 255, 64))
                 screen.blit(surf, rect)
 
-    for i, (move, tp) in enumerate(zip(board.legal_moves, probs)):
+    for i, (move, tp) in enumerate(zip(legals, probs)):
         prob = float(tp)
         ival = int(255 * prob)
 
