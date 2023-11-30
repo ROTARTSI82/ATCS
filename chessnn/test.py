@@ -2,6 +2,12 @@ import math
 import functools
 import torch
 import torch.nn as nn
+import scipy.signal as sig
+from scipy.io.wavfile import read, write
+
+FLEN = 3200
+OVERLAP = 150
+WINDOW = "hann"
 
 dev = torch.device("cpu")
 

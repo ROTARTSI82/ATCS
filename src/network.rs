@@ -312,7 +312,10 @@ impl NeuralNetwork
    {
       for (index, layer) in self.layers.iter_mut().enumerate()
       {
-         // we must split the slice into 2 halves to borrow 2 mutable values at the same time
+/*
+* rust's borrow checking will not allow us to borrow 2 mutable values from the
+* same slice at the same time, so we must split the slice into 2 halves first.
+*/
          let (input_slice, output_slice) = self.activations.split_at_mut(index + 1);
 
          let input_arr = &input_slice[index];
@@ -360,10 +363,6 @@ impl NeuralNetwork
 
       for (index, layer) in self.layers.iter_mut().enumerate().rev()
       {
-         /*
-          * rust's borrow checking will not allow us to borrow 2 mutable values from the
-          * same slice at the same time, so we must split the slice into 2 halves first.
-          */
          let (inp_deriv_slice, outp_deriv_slice) = self.omegas.split_at_mut(1);
 
          layer.feed_backward(&self.activations[index],
@@ -372,11 +371,11 @@ impl NeuralNetwork
                              &inp_deriv_slice[0][..layer.num_outputs as usize],
                              &mut outp_deriv_slice[0][..layer.num_inputs as usize]);
 
-         /*
-          * the derivatives outputted by this layer become the derivatives
-          * inputted into the previous layer. This layer's input derivatives
-          * will become overwritten.
-          */
+/*
+ * the derivatives outputted by this layer become the derivatives
+ * inputted into the previous layer. This layer's input derivatives
+ * will become overwritten by the next layer's output derivatives on the next iteration.
+ */
          self.omegas.swap(INPUT_DERIV, OUTPUT_DERIV);
       } // for (index, layer) in self.layers.iter_mut().enumerate().rev()
 

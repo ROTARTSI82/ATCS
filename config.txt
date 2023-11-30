@@ -7,7 +7,7 @@ print_weights: false
 # how often to print out training loss (in # of iterations)
 printout_period: int 16000
 
-network_topology: int[2,5,100,3]
+network_topology: int[2,5,10,20,40,80,160,320,3]
 
 # "sigmoid", "tanh", or "leaky_relu"
 activation_function: "sigmoid"
