@@ -86,10 +86,8 @@ const PARAMS_TO_PRINT: [&str; 6] = ["rand_lo",
  * For examples, see usages in `set_and_echo_config`
  */
 #[macro_export]
-macro_rules! expect_config
-{
-   ($name: pat, $str_name: expr, $body: expr) =>
-   {
+macro_rules! expect_config {
+   ($name: pat, $str_name: expr, $body: expr) => {
       if let $name = $str_name
       {
          $body
@@ -121,7 +119,6 @@ pub fn make_err(msg: &str) -> std::io::Error
  * including the final output layer.
  *
  * `do_training` MUST be a `Boolean` specifying whether to train the network.
- * If it is true, extra memory must be allocated to store the thetas_out
  *
  * If `do_training` is true, the following values are also required:
  * `Integer` values of `max_iterations` and `printout_period`,
@@ -157,10 +154,9 @@ pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, Co
                   config.get("do_training"),
                   net.do_training = *train);
 
-   expect_config!(Some(IntList(list)), config.get("network_topology"), 
-   {
+   expect_config!(Some(IntList(list)), config.get("network_topology"), {
       net.layers =
-         (0..list.len() - 1).map(|it| NetworkLayer::new(list[it], list[it + 1], net.do_training))
+         (0..list.len() - 1).map(|it| NetworkLayer::new(list[it], list[it + 1]))
                             .collect();
       net.activations = list.iter()
                             .map(|it| vec![0.0; *it as usize].into_boxed_slice())
@@ -171,8 +167,7 @@ pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, Co
       net.omegas = [mk_vec(), mk_vec()];
    }); // expect_config! Some(IntList(list)), config.get("network_topology")
 
-   expect_config!(Some(Text(func)), config.get("activation_function"), 
-   {
+   expect_config!(Some(Text(func)), config.get("activation_function"), {
       (net.threshold_func, net.threshold_func_deriv) = match func.as_str()
       {
          "identity" => (ident as FuncT, ident_deriv as FuncT),
@@ -256,7 +251,7 @@ pub fn load_dataset_from_config_txt(net: &NeuralNetwork, config: &BTreeMap<Strin
             dataset_out.push(Datapoint { inputs: vec.into_boxed_slice(),
                                          expected_outputs: outp.clone().into_boxed_slice() });
          }
-      } // if let FloatList(outp) = value
+      }
       else
       {
          Err(make_err("invalid value for case"))?;
@@ -300,19 +295,18 @@ fn set_initialization_mode(net: &mut NeuralNetwork, init_mode: &str,
       _ => Err(make_err("invalid 'initialization_mode' in config"))?,
    } // match init_mode
 
-   expect_config!(Some(Boolean(print)),
-                  config.get("print_weights"), {
-         if *print
+   expect_config!(Some(Boolean(print)), config.get("print_weights"), {
+      if *print
+      {
+         for (layer_no, layer) in net.layers.iter().enumerate()
          {
-            for (layer_no, layer) in net.layers.iter().enumerate()
+            println!("===== Layer {} weights =====", layer_no);
+            for col in layer.weights.chunks(layer.num_outputs as usize)
             {
-               println!("===== Layer {} weights =====", layer_no);
-               for col in layer.weights.chunks(layer.num_outputs as usize)
-               {
-                  println!("{:#.3?}", col);
-               }
+               println!("{:#.3?}", col);
             }
          }
+      }
    }); // expect_config!(Some(Boolean(print)), ...)
 
    Ok(())
@@ -324,7 +318,7 @@ fn set_initialization_mode(net: &mut NeuralNetwork, init_mode: &str,
  */
 fn randomize_network(net: &mut NeuralNetwork, range: Range<NumT>)
 {
-   let mut rng = rand::thread_rng();
+   let mut rng = thread_rng();
    for layer in net.layers.iter_mut()
    {
       for weight in layer.weights.iter_mut()
@@ -434,6 +428,7 @@ pub fn parse_config(filename: &str) -> Result<BTreeMap<String, ConfigValue>, std
 /**
  * These are the supported activation functions along with their derivatives:
  * The identity function, hyperbolic tangent, logistic sigmoid, and leaky ReLU.
+ * Derivatives are actually f'(f^-1(x)), not simply f'.
  */
 
 fn sigmoid(x: NumT) -> NumT
@@ -443,8 +438,7 @@ fn sigmoid(x: NumT) -> NumT
 
 fn sigmoid_deriv(x: NumT) -> NumT
 {
-   let f_of_x = sigmoid(x);
-   f_of_x * (1.0 - f_of_x)
+   x * (1.0 - x)
 }
 
 pub fn ident(x: NumT) -> NumT
@@ -481,6 +475,5 @@ fn tanh(x: NumT) -> NumT
 
 fn tanh_deriv(x: NumT) -> NumT
 {
-   let cosh = x.cosh();
-   1.0 / (cosh * cosh)
+   1.0 - x*x
 }

@@ -10,12 +10,10 @@
  * `Datapoint`: a container for testing and training data
  *
  * `NetworkLayer`
- *    `pub fn new(num_inputs: i32, num_outputs: i32, do_training: bool) -> NetworkLayer`
- *    `pub fn get_weight(&self, inp_index: usize, out_index: usize) -> &NumT`
- *    `pub fn get_weight_mut(&mut self, inp_index: usize, out_index: usize) -> &mut NumT`
- *    ```pub fn feed_forward<const WRITE_THETA: bool>(&mut self, inp_act_arr: &[NumT],
- *                                                  dest_h_out_arr: &mut [NumT],
- *                                                  threshold_func: FuncT)```
+ *    `pub fn new(num_inputs: i32, num_outputs: i32) -> NetworkLayer`
+ *    ```pub fn feed_forward(&mut self, inp_act_arr: &[NumT],
+ *                           dest_h_out_arr: &mut [NumT],
+ *                           threshold_func: FuncT)```
  *    ```pub fn feed_backward(&mut self, inp_acts_arr: &[NumT], learn_rate: NumT,
  *                          threshold_func_prime: FuncT, prev_omegas: &[NumT],
  *                          dest_next_omegas: &mut [NumT])```
@@ -24,7 +22,7 @@
  *    `pub fn new() -> NeuralNetwork`
  *    `pub fn get_inputs(&mut self) -> &mut [NumT]`
  *    `pub fn get_outputs(&self) -> &[NumT]`
- *    `pub fn feed_forward<const WRITE_THETA: bool>(&mut self)`
+ *    `pub fn feed_forward(&mut self)`
  *    `pub fn calculate_error(&mut self, target_out: &[NumT]) -> NumT`
  *    `pub fn feed_backward(&mut self, target_out: &[NumT]) -> NumT`
  */
@@ -101,20 +99,18 @@ pub struct NeuralNetwork
 
 /**
  * Represents an individual hidden (or output) layer in the network.
- * Stores both the weight array and, in the case of training, the thetas outputted.
- * The thetas are the outputs of this layer prior to applying the activation function.
+ * Stores the weight array.
  */
 #[derive(Debug)]
 pub struct NetworkLayer
 {
    /// The weight matrix is flattened stored in row-major order.
    pub weights: Box<[NumT]>,
+   pub delta_weights: Box<[NumT]>,
 
-   /**
-    * This is the result of the matrix-vector product of this layer,
-    * before it is passed into the activation function.
-    */
-   pub thetas_out: Box<[NumT]>,
+   /// Parameters for the ADAM optimizer
+   pub momentum: Box<[NumT]>,
+   pub velocity: Box<[NumT]>,
 
    pub num_inputs: i32,
    pub num_outputs: i32,
@@ -125,49 +121,37 @@ impl NetworkLayer
    /**
     * Allocates memory for a neural network layer according to the dimensions
     * of the inputs and outputs specified by `num_inputs` and `num_outputs`.
-    * If `do_train` is true, this function also allocates a `thetas_out` array,
-    * as those values only need to be saved for computing gradients during training.
     *
     * This function fills the fields of the network with dummy values.
     * See `set_and_echo_config` in `config.rs` for the code to initialize the network.
     */
-   pub fn new(num_inputs: i32, num_outputs: i32, do_training: bool) -> NetworkLayer
+   pub fn new(num_inputs: i32, num_outputs: i32) -> NetworkLayer
    {
+      let vec = vec![0.0; (num_inputs * num_outputs) as usize];
       NetworkLayer
       {
          num_inputs,
          num_outputs,
-         weights: vec![0.0; (num_inputs * num_outputs) as usize].into_boxed_slice(),
-
-         thetas_out: if do_training
-         {
-            vec![0.0; num_outputs as usize].into_boxed_slice()
-         }
-         else
-         {
-            Box::new([])
-         }
-      } // NetworkLayer
+         weights: vec.clone().into_boxed_slice(),
+         momentum: vec.clone().into_boxed_slice(),
+         delta_weights: vec.clone().into_boxed_slice(),
+         velocity: vec.into_boxed_slice()
+      }
+      // NetworkLayer
    } // fn new(num_inputs: i32, num_outputs: i32, do_training: bool) -> NetworkLayer
 
    /**
-    * These functions are used for indexing into the weight matrix.
+    * This functions is used for indexing into the weight, momentum, and velocity matrices.
     * These make code easier since I used flattened weight arrays. Instead of using a 2d
     * array to store the weight matrices, I used 1d arrays in row-major order.
     *
-    * Both functions have the following preconditions:
+    * Precondition:
     * 0 <= `inp_index` < `self.num_inputs` and 0 <= `out_index` < `self.num_outputs`.
     */
-   pub fn get_weight(&self, inp_index: usize, out_index: usize) -> &NumT
+   pub fn coord_to_idx(&self, inp_index: usize, out_index: usize) -> usize
    {
       debug_assert!(inp_index < self.num_inputs as usize && out_index < self.num_outputs as usize);
-      &self.weights[inp_index * self.num_outputs as usize + out_index]
-   }
-
-   pub fn get_weight_mut(&mut self, inp_index: usize, out_index: usize) -> &mut NumT
-   {
-      debug_assert!(inp_index < self.num_inputs as usize && out_index < self.num_outputs as usize);
-      &mut self.weights[inp_index * self.num_outputs as usize + out_index]
+      inp_index * self.num_outputs as usize + out_index
    }
 
    /**
@@ -177,14 +161,9 @@ impl NetworkLayer
     *
     * Precondition: `inp_act_arr` must have length equal to `self.num_inputs`
     * and `dest_h_out` must have length equal to `self.num_outputs`.
-    *
-    * The generic template variable `WRITE_THETA` controls whether the
-    * intermediate theta values are saved. It should only be true for
-    * training, as the theta arrays are not allocated when `do_training` is false.
     */
-   pub fn feed_forward<const WRITE_THETA: bool>(&mut self, inp_act_arr: &[NumT],
-                                                dest_h_out_arr: &mut [NumT],
-                                                threshold_func: FuncT)
+   pub fn feed_forward(&mut self, inp_act_arr: &[NumT], dest_h_out_arr: &mut [NumT],
+                       threshold_func: FuncT)
    {
       debug_assert_eq!(inp_act_arr.len(), self.num_inputs as usize);
       debug_assert_eq!(dest_h_out_arr.len(), self.num_outputs as usize);
@@ -192,19 +171,10 @@ impl NetworkLayer
       for out_it in 0..self.num_outputs as usize
       {
          let theta = (0..self.num_inputs as usize)
-            .map(|in_it| self.get_weight(in_it, out_it) * inp_act_arr[in_it])
+            .map(|in_it| self.weights[self.coord_to_idx(in_it, out_it)] * inp_act_arr[in_it])
             .sum::<NumT>();
 
          dest_h_out_arr[out_it] = threshold_func(theta);
-
-         /*
-          * this is NOT a conditional checked at runtime.
-          * this is evaluated at compile time as WRITE_THETA is a template variable.
-          */
-         if WRITE_THETA
-         {
-            self.thetas_out[out_it] = theta;
-         }
       } // for out_it in 0..self.num_outputs as usize
    } // pub fn feed_forward<...>(&self, inp: &[NumT], out: &mut [NumT], act: FuncT)
 
@@ -234,26 +204,56 @@ impl NetworkLayer
     * This layer's input is the previous layer's output, so this layer's `dest_next_omegas`
     * becomes the new `prev_omegas` of the previous layer.
     */
-   pub fn feed_backward(&mut self, inp_acts_arr: &[NumT], learn_rate: NumT,
-                        threshold_func_prime: FuncT, prev_omegas: &[NumT],
-                        dest_next_omegas: &mut [NumT])
+   pub fn feed_backward(&mut self, inp_acts_arr: &[NumT], out_acts_arr: &[NumT],
+                        learn_rate: NumT, threshold_func_prime: FuncT,
+                        prev_omegas: &[NumT], dest_next_omegas: &mut [NumT], step: i32)
    {
       debug_assert_eq!(inp_acts_arr.len(), self.num_inputs as usize);
       debug_assert_eq!(prev_omegas.len(), self.num_outputs as usize);
       debug_assert_eq!(dest_next_omegas.len(), self.num_inputs as usize);
+      debug_assert_eq!(out_acts_arr.len(), self.num_outputs as usize);
+
+      const BETA1: NumT = 0.9;
+      const BETA2: NumT = 0.999;
+      const EPS: NumT = 1e-8;
+      const WEIGHT_DECAY: NumT = 0.0;
 
       for (in_it, dest_wrt_inp) in dest_next_omegas.iter_mut().enumerate()
       {
          *dest_wrt_inp = (0..self.num_outputs as usize).map(|out_it|
          {
-            let psi = prev_omegas[out_it] * threshold_func_prime(self.thetas_out[out_it]);
+            let psi = prev_omegas[out_it] * threshold_func_prime(out_acts_arr[out_it]);
             debug_assert!(psi.is_finite() && !psi.is_nan());
 
-            *self.get_weight_mut(in_it, out_it) += learn_rate * inp_acts_arr[in_it] * psi;
-            psi * self.get_weight(in_it, out_it)
+            let idx = self.coord_to_idx(in_it, out_it);
+            let g = inp_acts_arr[in_it] * psi + WEIGHT_DECAY * self.weights[idx];
+
+            self.momentum[idx] *= BETA1;
+            self.momentum[idx] += (1.0 - BETA1) * g;
+
+            self.velocity[idx] *= BETA2;
+            self.velocity[idx] += (1.0 - BETA2) * g * g;
+
+            // sqrt(1 - B2^t) / (1 - B1^t) can cause a div by zero error if t is small
+            // so make sure that step > 0
+            let a = learn_rate * (1.0 - BETA2.powi(step)).sqrt() / (1.0 - BETA1.powi(step));
+
+            self.delta_weights[idx] += -a * self.momentum[idx] / (self.velocity[idx].sqrt() + EPS)
+                                       - WEIGHT_DECAY * self.weights[idx];
+
+            psi * self.weights[idx]
          }).sum(); // (0..self.num_inputs as usize).map(...).sum()
       } // for (in_it, dest_wrt_inp) in dest_next_omegas.iter_mut().enumerate()
    } // pub fn feed_backward(...)
+
+   pub fn apply_deltas(&mut self)
+   {
+      for (idx, w) in self.weights.iter_mut().enumerate()
+      {
+         *w += self.delta_weights[idx];
+      }
+      self.delta_weights.fill(0.0);
+   }
 } // impl NetworkLayer
 
 impl NeuralNetwork
@@ -303,26 +303,22 @@ impl NeuralNetwork
     * Runs the full neural network forwards.
     * The inputs into the network should be written into the array returned by
     * get_inputs(), and the outputs can be read from the array returned by get_outputs().
-    *
-    * The generic template variable `WRITE_THETA` controls whether the
-    * intermediate theta values are saved for backpropagation. It should only be true for
-    * training, as the theta arrays are not allocated when `do_training` is false.
     */
-   pub fn feed_forward<const WRITE_THETA: bool>(&mut self)
+   pub fn feed_forward(&mut self)
    {
       for (index, layer) in self.layers.iter_mut().enumerate()
       {
-/*
-* rust's borrow checking will not allow us to borrow 2 mutable values from the
-* same slice at the same time, so we must split the slice into 2 halves first.
-*/
+         /*
+         * rust's borrow checking will not allow us to borrow 2 mutable values from the
+         * same slice at the same time, so we must split the slice into 2 halves first.
+         */
          let (input_slice, output_slice) = self.activations.split_at_mut(index + 1);
 
          let input_arr = &input_slice[index];
          let dest_output_arr = &mut output_slice[0];
-         layer.feed_forward::<WRITE_THETA>(input_arr, dest_output_arr, self.threshold_func);
+         layer.feed_forward(input_arr, dest_output_arr, self.threshold_func);
       }
-   } // pub fn feed_forward<const WRITE_THETA: bool>(&mut self)
+   } // pub fn feed_forward(&mut self)
 
    /**
     * Calculates the error and fills
@@ -340,12 +336,12 @@ impl NeuralNetwork
       let mut error = 0.0;
       for i in 0..self.get_outputs().len()
       {
-         let little_omega = target_out[i] - self.get_outputs()[i];
-         error += 0.5 * little_omega * little_omega;
+         let little_omega = self.get_outputs()[i] - target_out[i];
+         error += little_omega * little_omega;
          self.omegas[INPUT_DERIV][i] = little_omega;
       }
 
-      error
+      error / self.get_outputs().len() as NumT
    } // fn calculate_error(&mut self, target_out: &[NumT]) -> NumT
 
    /**
@@ -357,7 +353,7 @@ impl NeuralNetwork
     * This function returns the error value for this training case.
     * See `NeuralNetwork::calculate_error`
     */
-   pub fn feed_backward(&mut self, target_out: &[NumT]) -> NumT
+   pub fn feed_backward(&mut self, target_out: &[NumT], step: i32) -> NumT
    {
       let error = self.calculate_error(target_out);
 
@@ -366,19 +362,29 @@ impl NeuralNetwork
          let (inp_deriv_slice, outp_deriv_slice) = self.omegas.split_at_mut(1);
 
          layer.feed_backward(&self.activations[index],
+                             &self.activations[index + 1],
                              self.learn_rate,
                              self.threshold_func_deriv,
                              &inp_deriv_slice[0][..layer.num_outputs as usize],
-                             &mut outp_deriv_slice[0][..layer.num_inputs as usize]);
+                             &mut outp_deriv_slice[0][..layer.num_inputs as usize],
+                             step);
 
-/*
- * the derivatives outputted by this layer become the derivatives
- * inputted into the previous layer. This layer's input derivatives
- * will become overwritten by the next layer's output derivatives on the next iteration.
- */
+         /*
+          * the derivatives outputted by this layer become the derivatives
+          * inputted into the previous layer. This layer's input derivatives
+          * will become overwritten by the next layer's output derivatives on the next iteration.
+          */
          self.omegas.swap(INPUT_DERIV, OUTPUT_DERIV);
       } // for (index, layer) in self.layers.iter_mut().enumerate().rev()
 
       error
    } // pub fn feed_backward(&mut self, target_out: &[NumT]) -> NumT
+
+   pub fn apply_deltas(&mut self)
+   {
+      for layer in self.layers.iter_mut()
+      {
+         layer.apply_deltas();
+      }
+   }
 } // impl NeuralNetwork

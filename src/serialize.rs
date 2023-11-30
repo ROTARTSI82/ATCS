@@ -81,7 +81,7 @@ pub fn write_net_to_file(net: &NeuralNetwork, filename: &str) -> Result<(), std:
 fn consume_i32(list: &[u8]) -> Result<i32, std::io::Error>
 {
    let bytes = list[..I32_SIZE].try_into()
-       .map_err(|_| make_err("corrupt network depth/input size"))?;
+                               .map_err(|_| make_err("corrupt network depth/input size"))?;
 
    Ok(i32::from_be_bytes(bytes))
 }
@@ -89,7 +89,7 @@ fn consume_i32(list: &[u8]) -> Result<i32, std::io::Error>
 fn consume_num(list: &[u8]) -> Result<NumT, std::io::Error>
 {
    let bytes = list[..NUM_SIZE].try_into()
-       .map_err(|_| make_err("corrupt network weight"))?;
+                               .map_err(|_| make_err("corrupt network weight"))?;
 
    Ok(NumT::from_be_bytes(bytes))
 }

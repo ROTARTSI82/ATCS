@@ -49,9 +49,11 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
       for case in dataset
       {
          network.get_inputs().copy_from_slice(&case.inputs);
-         network.feed_forward::<true>();
-         loss += network.feed_backward(&case.expected_outputs);
+         network.feed_forward();
+         loss += network.feed_backward(&case.expected_outputs, iteration + 1);
       }
+
+      network.apply_deltas();
 
       loss /= dataset.len() as NumT;
       if iteration % network.printout_period == 0
@@ -99,7 +101,7 @@ fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
    for case in dataset
    {
       network.get_inputs().copy_from_slice(&case.inputs);
-      network.feed_forward::<false>();
+      network.feed_forward();
       loss += network.calculate_error(&case.expected_outputs);
 
       println!("network {:.2?} = {:?} (expected {:.2?})",
@@ -110,7 +112,9 @@ fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
 
    let diff = start.elapsed();
    let ms = (diff.as_micros() as NumT) / 1000.0;
-   println!("Ran epoch in {:.4}ms ({:.4}ms per case)", ms, ms / dataset.len() as NumT);
+   println!("Ran epoch in {:.4}ms ({:.4}ms per case)",
+            ms,
+            ms / dataset.len() as NumT);
 
    loss /= dataset.len() as NumT;
    println!("final loss: {}\n", loss);
