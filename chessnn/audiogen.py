@@ -1,10 +1,12 @@
 from audiogen_train import *
 
-model = model.eval()
+model = model.train(True)
+
+start = 1600*3 # random.randint(0, list(data.shape)[0] - 1026)
+# start = 4096# *random.randint(1, 3)
 
 
 def gen():
-    start = 4096 # 4096 - 250 # random.randint(0, list(data.shape)[0] - 1026)
     generation = data[start:start+64].tolist()
     ctx = 64
     while ctx < 1024:
@@ -18,7 +20,6 @@ def gen():
 
 
 def preserve_test():
-    start = random.randint(0, list(data.shape)[0] - 1026)
     buf = torch.tensor(data[start:start+1024], dtype=dtype, device=device)
     for i in range(1):
         buf = model(buf, 1024)
@@ -28,4 +29,6 @@ def preserve_test():
 generation = gen()
 print(generation)
 write_out(generation)
+
+write_out(preserve_test(), "preserve.wav")
 

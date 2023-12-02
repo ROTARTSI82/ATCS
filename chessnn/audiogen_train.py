@@ -8,7 +8,7 @@ import math
 npdtype = float
 dtype = torch.float32
 device = torch.device('cuda')
-chunk = 1025
+chunk = 4100
 
 FLEN = 511
 OVERLAP = None
@@ -31,7 +31,7 @@ class AudioGen(torch.nn.Module):
         self.lin1 = torch.nn.Sequential(torch.nn.Linear(512, 512), torch.nn.GELU())
         self.trans = torch.nn.Transformer(512, num_encoder_layers=1, batch_first=True,
                                           dim_feedforward=2048, num_decoder_layers=4, activation=torch.nn.GELU(),
-                                          norm_first=True, bias=True, dropout=0.1, dtype=dtype)
+                                          norm_first=True, bias=False, dropout=0.1, dtype=dtype)
         # add convolution layer? how would you handle it being a mixture of real/imag parts?
         # probably group=2, but then i'd need to separate it into 2 channels which is a pain!
 
@@ -44,7 +44,7 @@ class AudioGen(torch.nn.Module):
 
 
 model = AudioGen().to(device).train(True)
-opt = torch.optim.AdamW(model.parameters(), lr=3e-5, eps=1e-5, betas=(0.9, 0.95), weight_decay=0.1)
+opt = torch.optim.AdamW(model.parameters(), lr=1.5e-5, eps=1e-5, betas=(0.9, 0.95), weight_decay=0.1)
 loss_fn = torch.nn.MSELoss()
 
 model.load_state_dict(torch.load("audiogen_big.txt"))
@@ -79,21 +79,36 @@ def write_out(net_repr, name="out.wav"):
 write_out(data[4096:4096+1024], "data.wav")
 
 print(f"parameters: {sum(p.numel() for p in model.parameters())}")
+maxstart = list(data.shape)[0] - 1026
+start = random.randint(0, maxstart)
+epoch = 0
 if __name__ == "__main__":
     for batch in range(chunk):
         opt.zero_grad()
         audio = []  # batch size
         expected_out = []
+        expected_double = []
         for i in range(4):
-            #
-            start = 4096*i if random.randint(0, 100) <= 75 else random.randint(0, list(data.shape)[0] - 1026)
+            start += 409
+            start = random.randint(0, maxstart)
+            start = (i+1)*1600 + random.randint(-4, 4) if random.randint(0, 100) <= 99 else start
+            if start >= maxstart:
+                epoch += 1
+                start %= 7
+            start = min(max(start, 0), maxstart)
             audio.append(data[start:start+1024])
-            expected_out.append(data[start+1:start+1025])  # todo: change back to offset
+            expected_out.append(data[start+1:start+1025])
+            expected_double.append(data[start+2:start+1026])  # todo: change back to offset
         audio_tensor = torch.tensor(np.array(audio), dtype=dtype, device=device)
         audio_out = model(audio_tensor, 1024)
         expected = torch.tensor(np.array(expected_out), dtype=dtype, device=device)
         # print(audio_out, '\n', expected_out)
         loss = loss_fn(audio_out, expected)
+        if True:
+            double_out = model(audio_out, 1024)
+            double_exp = torch.tensor(np.array(expected_double), dtype=dtype, device=device)
+            loss *= 0.75
+            loss += 0.25 * loss_fn(double_out, double_exp)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
         opt.step()
@@ -106,6 +121,6 @@ if __name__ == "__main__":
             torch.save(model.state_dict(), "audiogen_big.txt")
             print(f"======= \\/ saved checkout \\/ ===========")
 
-        print(f"{batch}/{chunk} {100*batch/chunk:.2f}% {audio_tensor.shape}: loss = {loss}")
+        print(f"{epoch} {batch}/{chunk} {100*batch/chunk:.2f}% start={start}:\tloss = {loss}")
 
 
