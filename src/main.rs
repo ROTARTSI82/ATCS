@@ -48,6 +48,7 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
 
       for case in dataset
       {
+         network.randomize_dropouts();
          network.get_inputs().copy_from_slice(&case.inputs);
          network.feed_forward();
          loss += network.feed_backward(&case.expected_outputs, iteration + 1);
@@ -59,7 +60,7 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
       if iteration % network.printout_period == 0
       {
          println!("loss={:.6}\tλ={:.6}\tit={}",
-                  loss, network.learn_rate, iteration);
+                  loss, network.train_params.learn_rate, iteration);
       }
 
       iteration += 1;
@@ -94,6 +95,7 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
  */
 fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
 {
+   network.zero_dropouts();
    println!("\nTruth table");
    let mut loss = 0.0;
 

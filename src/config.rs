@@ -48,7 +48,7 @@ use std::ops::Range;
  * The type of the values contained in the network
  * has been extracted to a type variable for easy modification.
  */
-pub type NumT = f64;
+pub type NumT = f32;
 pub type FuncT = fn(NumT) -> NumT;
 
 /**
@@ -70,12 +70,14 @@ pub enum ConfigValue
  * These are the parameters of the configuration that are printed out
  * before running the network.
  */
-const PARAMS_TO_PRINT: [&str; 6] = ["rand_lo",
+const PARAMS_TO_PRINT: [&str; 9] = ["rand_lo",
                                     "rand_hi",
                                     "network_topology",
                                     "max_iterations",
                                     "learn_rate",
-                                    "error_cutoff"];
+                                    "error_cutoff",
+                                    "activation_function",
+                                    "dropout", "weight_decay"];
 
 /**
  * This macro attempts to unwrap a certain value (specified by the expression `str_name`)
@@ -161,14 +163,25 @@ pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, Co
       net.activations = list.iter()
                             .map(|it| vec![0.0; *it as usize].into_boxed_slice())
                             .collect();
+      net.dropouts = list.iter().map(|it| vec![false; *it as usize].into_boxed_slice()).collect();
 
       let max_width = *list.iter().max().ok_or(make_err("net topology empty"))? as usize;
       let mk_vec = || vec![0.0; max_width].into_boxed_slice();
       net.omegas = [mk_vec(), mk_vec()];
    }); // expect_config! Some(IntList(list)), config.get("network_topology")
 
+   expect_config!(Some(Numeric(drop)), config.get("dropout"), net.train_params.dropout_prob = *drop);
+   expect_config!(Some(FloatList(betas)), config.get("betas"), {
+      net.train_params.beta1 = *betas.get(0).ok_or(make_err("need beta 1"))?;
+      net.train_params.beta2 = *betas.get(1).ok_or(make_err("need beta 2"))?;
+   });
+
+   expect_config!(Some(Numeric(eps)), config.get("epsilon"), net.train_params.eps = *eps);
+   expect_config!(Some(Numeric(decay)), config.get("weight_decay"), net.train_params.weight_decay = *decay);
+
+
    expect_config!(Some(Text(func)), config.get("activation_function"), {
-      (net.threshold_func, net.threshold_func_deriv) = match func.as_str()
+      (net.train_params.threshold_func, net.train_params.threshold_func_deriv) = match func.as_str()
       {
          "identity" => (ident as FuncT, ident_deriv as FuncT),
          "sigmoid" => (sigmoid as FuncT, sigmoid_deriv as FuncT),
@@ -186,7 +199,7 @@ pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, Co
    {
       expect_config!(Some(Numeric(lambda)),
                      config.get("learn_rate"),
-                     net.learn_rate = *lambda);
+                     net.train_params.learn_rate = *lambda);
 
       expect_config!(Some(Integer(max_iters)),
                      config.get("max_iterations"),
