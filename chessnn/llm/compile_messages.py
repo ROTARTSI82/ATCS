@@ -25,5 +25,6 @@ for k in index:
 master_list = sorted(master_list, key=lambda x: x[0])
 for i in master_list:
     msg = i[2].replace('\n', '\n ')
-    print(f"[newdoc] {i[0][:7]} {i[1]}\n {msg} {i[3]}".rstrip())
+    print(f" {msg.strip()}")
+    # print(f"[newdoc] {i[0][:7]} {i[1]}\n {msg} {i[3]}".rstrip())
 

@@ -99,7 +99,7 @@ struct Vocabulary {
   TokType resolve_type(TokType left, TokType right) {
     // if (left == SPECIAL || right == SPECIAL)
     //   return SPECIAL;
-    if (left == right && (left == ALPH || left == NUM || left == SYM || left == SPECIAL))
+    if (left == right && (left == ALPH || left == NUM || left == SYM || left == SPECIAL || left == SPACE))
       return left;
     if (left == PRESYM && right == SYM || left == SYM && right == PRESYM || left == PRESYM && right == PRESYM)
       return SYM;
@@ -120,7 +120,7 @@ struct Vocabulary {
 
     std::unordered_map<Token, size_t> freqs{};
 
-    for (int vocab_size = 0; vocab_size < 4096; vocab_size++) {
+    for (int vocab_size = 0; vocab_size < 1024; vocab_size++) {
       Token selected{31415, 271828};
       size_t maxocc = 0;
       for (size_t i = 0; i < size - 1; i++) {
@@ -145,7 +145,7 @@ struct Vocabulary {
         }
       }
 
-      if (maxocc == 0 || freqs[selected] < 128) {
+      if (maxocc < 256) {
         break; // we combined all the tokens we can! or it's just not worth it.
       }
 
@@ -178,7 +178,7 @@ struct Vocabulary {
 };
 
 int main() {
-  std::ifstream file("MASTER.txt", std::ios::binary | std::ios::ate);
+  std::ifstream file("dataset.txt", std::ios::binary | std::ios::ate);
   std::streamsize size = file.tellg();
   file.seekg(0, std::ios::beg);
 
@@ -195,7 +195,7 @@ int main() {
     
     vocab.bpe(expanded.data(), expanded.size());
 
-    std::ofstream out("vocab_2.txt", std::ios::binary);
+    std::ofstream out("vocab.txt", std::ios::binary);
     size_t idx = 256;
     for (auto &tok : vocab.tokens) {
       std::string str = vocab.resolve(idx);

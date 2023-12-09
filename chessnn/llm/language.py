@@ -10,9 +10,16 @@ tokens = [i.to_bytes(1, 'big') for i in range(256)]
 with open("vocab.txt", "rb") as fp:
     vocab = fp.read()
 
+d_model = 512
+vocab_size = 1279  # 767
+ctx = 512
+nhead = 8
+nlayer = 4
+lab_smooth = 0.1
+
 longest = 0
 idx = 256
-for i in range(512):
+for i in range(vocab_size - 256):
     s = struct.unpack("@L", vocab[:8])[0]
     utf = vocab[8:8+s]
     if utf == b"newdoc":
@@ -22,24 +29,29 @@ for i in range(512):
     tokens.append(utf)
     vocab = vocab[8+s:]
     idx += 1
+longest = 24  # hardcoding this because
 
-
-# with open("dataset.txt", "rb") as fp:
-#   data = fp.read()
 
 def tokenize(string):
     dat_encoded = []
     enc_str = []
+    occ_table = dict()
     i = 0
     while i < len(string):
         if i % 4096 == 0:
-            print(f"{100*i/len(string):.2f}% {string[i:i+16]}")
+            pass  # print(f"{100*i/len(string):.2f}% {string[i:i+16]}")
         for j in reversed(range(1, longest + 1)):
             sub = string[i:i+j]
             if sub in enc_dict:
-                dat_encoded.append(enc_dict[sub])
+                idx = enc_dict[sub]
+                dat_encoded.append(idx)
                 enc_str.append(sub)
                 i += len(sub)
+
+                if idx in occ_table:
+                    occ_table[idx] += 1
+                else:
+                    occ_table[idx] = 1
                 break
         else:
             print(b"what?: " + string[i:i+16])
@@ -47,26 +59,29 @@ def tokenize(string):
             dat_encoded.append(int.from_bytes(string[i], 'big'))
             enc_str.append(string[i])
             i += 1
+    # print(sorted([(i, occ_table[i]) for i in occ_table], key=lambda x: x[1]))
     return dat_encoded
 
 
-# with open('dataset_enc.json', 'w') as fp:
-#    json.dump(dat_encoded, fp)
-# print(enc_str)
+# with open("MASTER.txt", "rb") as fp:
+#     master = fp.read()
+#
+# data = tokenize(master)
+# with open('dataset_enc_master.json', 'w') as fp:
+#     json.dump(data, fp)
 
+# with open('dataset_enc_master.json', 'r') as fp:
+#    data = json.load(fp)
 
-with open('dataset_enc.json', 'r') as fp:
-    data = json.load(fp)
+with open("dataset.txt", 'rb') as fp:
+    data = fp.read()
 
 npdtype = float
 dtype = torch.float32
 device = torch.device('cuda')
 
-d_model = 512 + 256
-vocab_size = 512 + 256
-
 pos_enc = [[(math.sin if i%2 == 0 else math.cos)(pos / 10000**(2*(i//2) / d_model)) for i in range(d_model)]
-           for pos in range(1024)]
+           for pos in range(ctx)]
 pos_enc = torch.tensor(pos_enc, dtype=dtype, device=device)
 
 
@@ -74,10 +89,10 @@ class LanguageModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.vocab_embed = torch.nn.Embedding(vocab_size, d_model)
-        enc_layer = torch.nn.TransformerEncoderLayer(d_model, 8, activation=torch.nn.LeakyReLU(0.01),
+        enc_layer = torch.nn.TransformerEncoderLayer(d_model, nhead, activation=torch.nn.ReLU(),
                                                      batch_first=True, norm_first=True, bias=True, dropout=0.1)
         self.trans = torch.nn.TransformerEncoder(enc_layer,
-                                                 6, torch.nn.LayerNorm(d_model, bias=True))
+                                                 nlayer, torch.nn.LayerNorm(d_model, bias=True))
         # todo: come up with a better way of doing prob_out
         self.prob_out = torch.nn.Sequential(torch.nn.Linear(d_model, vocab_size, bias=False))
 
@@ -90,13 +105,15 @@ class LanguageModel(torch.nn.Module):
         return self.prob_out(trans)
 
 
-lr = 3e-4
+lr = 1.5e-4
 model = LanguageModel().to(device).train(True)
 opt = torch.optim.AdamW(model.parameters(), lr=lr, eps=1e-5, betas=(0.9, 0.95), weight_decay=0.1)
-loss_fn = torch.nn.CrossEntropyLoss()
+loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=lab_smooth)
+
+print(f"{sum(tens.numel() for tens in model.parameters())} parameters")
 
 load = torch.load('discordllm_BIG.txt')
-model.load_state_dict(load['model'])
+model.load_state_dict(load['model'], strict=False)
 
 start = 0
 start = load['start']
@@ -111,21 +128,24 @@ while running:
     # for g in opt.param_groups:
     #     g['lr'] = lr
     vec = []
-    for minibatch in range(4):
-        vec.append(data[start:start + 1025])
-        start += random.randint(1, 8)
-        if start >= len(data) - 1025:
-            start = 0
+    for minibatch in range(16):
+        toks = tokenize(data[start:start+4*4096])
+        vec.append(toks[:ctx + 1])
+        # start += random.randint(-16, 1024 // 12 - 16)
+        start += random.randint(-ctx//2, 2*ctx)
+        start = max(0, start)
+        if start >= len(data) - 4*4096:
+            start %= len(data) - 4*4096
             running = False
     # start -= 8  # random.randint(0, 8)
 
     case = torch.tensor(vec, device=device)
     targ = torch.nn.functional.one_hot(case[:, 1:], num_classes=vocab_size).float()
-    out = model(case[:, :1024], 1024)
+    out = model(case[:, :ctx], ctx)
 
     loss = loss_fn(out, targ)
     loss.backward()
-    # torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+    torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
     opt.step()
     print(f"{start}\t{100*start/len(data):.2f}% {lr:.2E}\t{loss.item()}\t{b''.join(tokens[i] for i in data[start:start+16])}")
 
@@ -136,13 +156,20 @@ while running:
 
 generate = True
 if generate:
-    prompt = tokenize(b"To be the very best, one must")
+    prompt = tokenize(b" Capture of Sedalia\n The capture of Sedalia occurred during the American Civil War when a Confederate force captured the Union garrison of Sedalia, Missouri, on October 15, 1864.")
     print(prompt)
 
-    for i in range(1000):
-        case = torch.tensor(prompt[-1024:], device=device)
-        out = model(case, min(1024, len(prompt)))
+    case = torch.tensor(prompt[-ctx:], device=device)
+    out = torch.softmax(model(case, min(ctx, len(prompt))), dim=1)
+    print(b''.join(tokens[i] for i in torch.argmax(out, dim=1)).decode('utf-8', 'ignore'))
+
+    model.train()
+    for i in range(1024):
+        case = torch.tensor(prompt[-ctx:], device=device)
+        out = torch.softmax(model(case, min(ctx, len(prompt))), dim=1)
+        # new = torch.multinomial(out[-1], num_samples=1)[0]
         new = torch.argmax(out[-1])
         prompt.append(new.item())
         print(i, tokens[new.item()])
-    print(b''.join(tokens[i] for i in prompt))
+    print('\n')
+    print(b''.join(tokens[i] for i in prompt).decode('utf-8', 'ignore'))
