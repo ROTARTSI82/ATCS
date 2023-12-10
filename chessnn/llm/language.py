@@ -17,6 +17,9 @@ nhead = 8
 nlayer = 4
 lab_smooth = 0.1
 
+temp = 0.8
+top_k = int(vocab_size * 0.2)
+
 longest = 0
 idx = 256
 for i in range(vocab_size - 256):
@@ -116,11 +119,11 @@ load = torch.load('discordllm_BIG.txt')
 model.load_state_dict(load['model'], strict=False)
 
 start = 0
-start = load['start']
+# start = load['start']
 
 tot_steps = 1
 warmup = 100
-running = True
+running = False
 while running:
     opt.zero_grad()
 
@@ -129,21 +132,20 @@ while running:
     #     g['lr'] = lr
     vec = []
     for minibatch in range(16):
+        # start = random.randint(0, len(data) - 4*4096)
         toks = tokenize(data[start:start+4*4096])
         vec.append(toks[:ctx + 1])
-        # start += random.randint(-16, 1024 // 12 - 16)
         start += random.randint(-ctx//2, 2*ctx)
         start = max(0, start)
         if start >= len(data) - 4*4096:
             start %= len(data) - 4*4096
             running = False
-    # start -= 8  # random.randint(0, 8)
 
     case = torch.tensor(vec, device=device)
-    targ = torch.nn.functional.one_hot(case[:, 1:], num_classes=vocab_size).float()
     out = model(case[:, :ctx], ctx)
 
-    loss = loss_fn(out, targ)
+    targ = case[:, 1:].reshape(-1)
+    loss = loss_fn(out.view(-1, vocab_size), targ)
     loss.backward()
     torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
     opt.step()
@@ -156,7 +158,7 @@ while running:
 
 generate = True
 if generate:
-    prompt = tokenize(b" Capture of Sedalia\n The capture of Sedalia occurred during the American Civil War when a Confederate force captured the Union garrison of Sedalia, Missouri, on October 15, 1864.")
+    prompt = tokenize(b" i love")
     print(prompt)
 
     case = torch.tensor(prompt[-ctx:], device=device)
@@ -166,9 +168,15 @@ if generate:
     model.train()
     for i in range(1024):
         case = torch.tensor(prompt[-ctx:], device=device)
-        out = torch.softmax(model(case, min(ctx, len(prompt))), dim=1)
-        # new = torch.multinomial(out[-1], num_samples=1)[0]
-        new = torch.argmax(out[-1])
+        logits = model(case, min(ctx, len(prompt))) / temp
+        out = torch.softmax(logits, dim=1)
+
+        # from nanogpt
+        if top_k is not None:
+            v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+            logits[logits < v[:, [-1]]] = -float('Inf')
+        new = torch.multinomial(out[-1], num_samples=1)[0]
+        # new = torch.argmax(out[-1])
         prompt.append(new.item())
         print(i, tokens[new.item()])
     print('\n')
