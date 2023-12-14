@@ -1,33 +1,36 @@
-do_training: true
-max_iterations: int 3200
-error_cutoff: float 2e-4
-learn_rate: float 3e-3
-dropout: float 0.0
+do_training: false
+max_iterations: int 128
+error_cutoff: float 8e-5
+learn_rate: float 3e-4
+batch_size: int 25
+dropout: float 0
 betas: float[0.9, 0.95]
-weight_decay: float 0.0
+weight_decay: float 0
 epsilon: float 1e-5
 
 print_weights: false
 
 # how often to print out training loss (in # of iterations)
-printout_period: int 64
+printout_period: int 1
+checkpoint_period: int 2
 
-network_topology: int[2,10,3]
+network_topology: int[16384,512,64,32,5]
 
 # "sigmoid", "tanh", or "leaky_relu"
 activation_function: "sigmoid"
 
 # "randomize", "from_file", or "fixed_value" (fixed_value is not implemented yet)
-initialization_mode: "randomize"
+initialization_mode: "from_file"
 rand_lo: float -1
 rand_hi: float 1
 
 # load_file is not used with initialization_mode="randomize"
-load_file: "xor_sigmoid.txt"
-save_file: "xor_sigmoid.txt"
+load_file: "image_rec.net"
+save_file: "trash.net"
 
 # In the future, I will implement loading training data from a binary file or directory.
-# training_cases_mode: "truth_table"
+dataset_mode: "from_file"
+dataset_file: "dataset/validate.data"
 case [0,0]: float[0,0,0]
 case [0,1]: float[0,1,1]
 case [1,0]: float[0,1,1]

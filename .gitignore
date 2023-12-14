@@ -9,3 +9,10 @@ cpp/build
 cpp/cmake-build-debug
 
 .helix/
+**/*.txt
+**/*.jpeg
+**/*.HEIC
+**/*.bmp
+
+**/cmake-build-debug
+**/*.class

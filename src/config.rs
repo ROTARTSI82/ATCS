@@ -36,7 +36,7 @@
  */
 use crate::config::ConfigValue::{Boolean, FloatList, IntList, Integer, Numeric, Text};
 use crate::network::{Datapoint, NetworkLayer, NeuralNetwork};
-use crate::serialize::read_net_from_file;
+use crate::serialize::{load_dataset_from_file, read_net_from_file};
 
 use rand::prelude::*;
 use std::collections::BTreeMap;
@@ -172,7 +172,7 @@ pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, Co
 
    expect_config!(Some(Numeric(drop)), config.get("dropout"), net.train_params.dropout_prob = *drop);
    expect_config!(Some(FloatList(betas)), config.get("betas"), {
-      net.train_params.beta1 = *betas.get(0).ok_or(make_err("need beta 1"))?;
+      net.train_params.beta1 = *betas.first().ok_or(make_err("need beta 1"))?;
       net.train_params.beta2 = *betas.get(1).ok_or(make_err("need beta 2"))?;
    });
 
@@ -209,6 +209,14 @@ pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, Co
                      config.get("printout_period"),
                      net.printout_period = *printout);
 
+      expect_config!(Some(Integer(checkpoint)),
+                     config.get("checkpoint_period"),
+                     net.checkpoint_period = *checkpoint);
+
+      expect_config!(Some(Integer(batch)),
+                     config.get("batch_size"),
+                     net.batch_size = *batch);
+
       expect_config!(Some(Numeric(cutoff)),
                      config.get("error_cutoff"),
                      net.error_cutoff = *cutoff);
@@ -240,6 +248,22 @@ pub fn load_dataset_from_config_txt(net: &NeuralNetwork, config: &BTreeMap<Strin
                                     dataset_out: &mut Vec<Datapoint>)
                                     -> Result<(), std::io::Error>
 {
+   let expected = (net.layers.first().unwrap().num_inputs as usize,
+                   net.layers.last().unwrap().num_outputs as usize);
+
+   expect_config!(Some(Text(mode)), config.get("dataset_mode"), {
+      if mode == "from_file"
+      {
+         expect_config!(Some(Text(filename)), config.get("dataset_file"), {
+            load_dataset_from_file(dataset_out, filename, expected)?;
+            return Ok(());
+         });
+      } else if mode != "truth_table"
+      {
+         Err(make_err("unrecognized `dataset_mode` config value"))?;
+      }
+   });
+
    for (key, value) in config.iter().filter(|(key, _)| key.starts_with("case"))
    {
       if let FloatList(outp) = value
@@ -254,8 +278,8 @@ pub fn load_dataset_from_config_txt(net: &NeuralNetwork, config: &BTreeMap<Strin
                       .collect::<Result<Vec<_>, _>>()
                       .map_err(|_| err_msg())?;
 
-         if vec.len() != net.layers.first().unwrap().num_inputs as usize
-            || outp.len() != net.layers.last().unwrap().num_outputs as usize
+         if vec.len() != expected.0
+            || outp.len() != expected.1
          {
             Err(make_err("case size does not match configured input/output size"))?;
          }

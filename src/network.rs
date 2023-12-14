@@ -107,6 +107,8 @@ pub struct NeuralNetwork
    pub error_cutoff: NumT,
    pub max_iterations: i32,
    pub printout_period: i32,
+   pub batch_size: i32,
+   pub checkpoint_period: i32,
    pub do_training: bool,
 } // pub struct NeuralNetwork
 
@@ -294,6 +296,8 @@ impl NeuralNetwork
          error_cutoff: 0.0,
          do_training: false,
          printout_period: 0,
+         checkpoint_period: 0,
+         batch_size: 0,
          dropouts: Box::new([]),
          train_params: TrainParams {
             threshold_func: ident,

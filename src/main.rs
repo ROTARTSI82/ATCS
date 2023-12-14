@@ -27,6 +27,15 @@ use crate::config::*;
 use crate::network::{Datapoint, NeuralNetwork};
 use crate::serialize::write_net_to_file;
 use std::error::Error;
+use rand::prelude::IteratorRandom;
+
+/**
+ * Get index of maximal element
+ */
+fn max_idx(arr: &[NumT]) -> Option<usize>
+{
+   Some(arr.iter().enumerate().max_by(|(_,i), (_,j)| i.total_cmp(j))?.0)
+}
 
 /**
  * Runs training on a neural network with the specified `dataset`.
@@ -38,6 +47,7 @@ use std::error::Error;
  */
 fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
 {
+   let mut rng = rand::thread_rng();
    let mut loss = network.error_cutoff;
    let mut iteration = 0;
 
@@ -46,12 +56,21 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
    {
       loss = 0.0;
 
-      for case in dataset
+      let mut correct = 0;
+      for case in dataset.iter().choose_multiple(&mut rng, network.batch_size as usize)
       {
          network.randomize_dropouts();
          network.get_inputs().copy_from_slice(&case.inputs);
          network.feed_forward();
          loss += network.feed_backward(&case.expected_outputs, iteration + 1);
+
+         let (a, b) = (max_idx(network.get_outputs()).unwrap(),
+                       max_idx(&case.expected_outputs).unwrap());
+         //println!("{:#?} vs. {:#?} {a} {b}", network.get_outputs(), &case.expected_outputs);
+         if a == b
+         {
+            correct += 1
+         }
       }
 
       network.apply_deltas();
@@ -59,8 +78,9 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
       loss /= dataset.len() as NumT;
       if iteration % network.printout_period == 0
       {
-         println!("loss={:.6}\tλ={:.6}\tit={}",
-                  loss, network.train_params.learn_rate, iteration);
+         println!("loss={:.6}\tacc={:.2}\tλ={:.6}\tit={}",
+                  loss, 100.0 * correct as NumT / network.batch_size as NumT,
+                  network.train_params.learn_rate, iteration);
       }
 
       iteration += 1;
@@ -99,6 +119,8 @@ fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
    println!("\nTruth table");
    let mut loss = 0.0;
 
+   let mut correct = 0;
+
    let start = std::time::Instant::now();
    for case in dataset
    {
@@ -106,10 +128,16 @@ fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
       network.feed_forward();
       loss += network.calculate_error(&case.expected_outputs);
 
-      println!("network {:.2?} = {:?} (expected {:.2?})",
-               case.inputs,
+      println!("network = {:?} (expected {:.2?})",
                network.get_outputs(),
                case.expected_outputs);
+
+      let (a, b) = (max_idx(network.get_outputs()).unwrap(),
+                    max_idx(&case.expected_outputs).unwrap());
+      if a == b
+      {
+         correct += 1
+      }
    } // for case in dataset
 
    let diff = start.elapsed();
@@ -119,7 +147,8 @@ fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
             ms / dataset.len() as NumT);
 
    loss /= dataset.len() as NumT;
-   println!("final loss: {}\n", loss);
+   println!("final loss: {}\tfinal accuracy: {}\n", loss,
+            100.0 * correct as NumT / dataset.len() as NumT);
 } // fn print_truth_table(network: &mut Network, dataset: &Vec<Datapoint>)
 
 /**
