@@ -17,7 +17,7 @@ cnt = 0
 
 
 db = b"ATNeuralDataset"
-db += struct.pack('>i', int(end - start))
+db += struct.pack('>i', int(end - start + 1))
 db += struct.pack('>i', 128 * 128) # input dims
 db += struct.pack('>i', 5) # output dims
 
@@ -57,7 +57,7 @@ for i in range(start, end+1):
 
     clas = (i-1) % 5
     name = f"hand{cnt//5}_{clas + 1}"
-    cv2.imwrite(name + ".bmp", img)
+    # cv2.imwrite(name + ".bmp", img)
     cnt += 1
 
     for b in img.reshape(-1):

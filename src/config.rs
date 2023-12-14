@@ -244,7 +244,7 @@ pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, Co
  * as a `FloatList`. The array in the `case [..]` key are parsed in the same way with
  * rust parsing, so e-notation is supported in all cases.
  */
-pub fn load_dataset_from_config_txt(net: &NeuralNetwork, config: &BTreeMap<String, ConfigValue>,
+pub fn load_dataset_from_config_txt(net: &mut NeuralNetwork, config: &BTreeMap<String, ConfigValue>,
                                     dataset_out: &mut Vec<Datapoint>)
                                     -> Result<(), std::io::Error>
 {
@@ -256,6 +256,10 @@ pub fn load_dataset_from_config_txt(net: &NeuralNetwork, config: &BTreeMap<Strin
       {
          expect_config!(Some(Text(filename)), config.get("dataset_file"), {
             load_dataset_from_file(dataset_out, filename, expected)?;
+            if dataset_out.len() < net.batch_size as usize
+            {
+               net.batch_size = dataset_out.len() as i32;
+            }
             return Ok(());
          });
       } else if mode != "truth_table"
@@ -294,6 +298,11 @@ pub fn load_dataset_from_config_txt(net: &NeuralNetwork, config: &BTreeMap<Strin
          Err(make_err("invalid value for case"))?;
       }
    } // for (key, value) in config.iter().filter(...)
+
+   if dataset_out.len() < net.batch_size as usize
+   {
+      net.batch_size = dataset_out.len() as i32;
+   }
 
    println!();
    Ok(())
