@@ -1,9 +1,9 @@
-do_training: false
-max_iterations: int 256
+do_training: true
+max_iterations: int 128
 error_cutoff: float 8e-5
-learn_rate: float 1.5e-4
+learn_rate: float 1.5e-5
 batch_size: int 30
-dropout: float 0.01
+dropout: float 0.05
 betas: float[0.9, 0.95]
 weight_decay: float 0
 epsilon: float 1e-5
@@ -14,23 +14,23 @@ print_weights: false
 printout_period: int 8
 checkpoint_period: int 2
 
-network_topology: int[16384,12,32,12,5]
+network_topology: int[16384,5]
 
 # "sigmoid", "tanh", or "leaky_relu"
-activation_function: "sigmoid"
+activation_function: "tanh"
 
 # "randomize", "from_file"
-initialization_mode: "from_file"
-rand_lo: float -1
-rand_hi: float 1
+initialization_mode: "randomize"
+rand_lo: float -0.001
+rand_hi: float 0.001
 
 # load_file is not used with initialization_mode="randomize"
-load_file: "image_rec_sm2.net"
+load_file: "trash.net"
 save_file: "trash.net"
 
 # In the future, I will implement loading training data from a binary file or directory.
 dataset_mode: "from_file"
-dataset_file: "dataset/train.data"
+dataset_file: "dataset/.secret.data"
 case [0,0]: float[0,0,0]
 case [0,1]: float[0,1,1]
 case [1,0]: float[0,1,1]

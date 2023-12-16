@@ -28,8 +28,7 @@ use crate::network::{Datapoint, NeuralNetwork};
 use crate::serialize::write_net_to_file;
 use std::error::Error;
 use rand::prelude::IteratorRandom;
-use rand::Rng;
-use rand_distr::StandardNormal;
+
 
 /**
  * Get index of maximal element
@@ -63,15 +62,7 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
       {
          network.randomize_dropouts();
          network.get_inputs().copy_from_slice(&case.inputs);
-         for inp in network.get_inputs().iter_mut()
-         {
-            *inp += 0.1 * rng.sample::<f32,_>(StandardNormal);
-            if rng.gen_bool(0.1)
-            {
-               *inp = 0.0;
-            }
-         }
-
+         network.add_noise(&mut rng);
          network.feed_forward();
          loss += network.feed_backward(&case.expected_outputs, iteration + 1);
 

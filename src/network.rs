@@ -1,4 +1,6 @@
 use rand::{Rng, thread_rng};
+use rand::rngs::ThreadRng;
+use rand_distr::StandardNormal;
 /**
  * network.rs
  * By Grant Yang
@@ -178,7 +180,7 @@ impl NetworkLayer
     * and `dest_h_out` must have length equal to `self.num_outputs`.
     */
    pub fn feed_forward(&mut self, inp_act_arr: &[NumT], dest_h_out_arr: &mut [NumT],
-                       threshold_func: FuncT)
+                       threshold_func: FuncT, activ: bool)
    {
       debug_assert_eq!(inp_act_arr.len(), self.num_inputs as usize);
       debug_assert_eq!(dest_h_out_arr.len(), self.num_outputs as usize);
@@ -189,7 +191,7 @@ impl NetworkLayer
             .map(|in_it| self.weights[self.coord_to_idx(in_it, out_it)] * inp_act_arr[in_it])
             .sum::<NumT>();
 
-         dest_h_out_arr[out_it] = threshold_func(theta);
+         dest_h_out_arr[out_it] = if activ { threshold_func(theta) } else { theta };
       } // for out_it in 0..self.num_outputs as usize
    } // pub fn feed_forward<...>(&self, inp: &[NumT], out: &mut [NumT], act: FuncT)
 
@@ -222,7 +224,8 @@ impl NetworkLayer
    pub fn feed_backward(&mut self, inp_acts_arr: &[NumT], out_acts_arr: &[NumT],
                         params: &TrainParams,
                         dropped_outputs: &[bool],
-                        prev_omegas: &[NumT], dest_next_omegas: &mut [NumT], step: i32)
+                        prev_omegas: &[NumT], dest_next_omegas: &mut [NumT],
+                        step: i32, activ: bool)
    {
       debug_assert_eq!(inp_acts_arr.len(), self.num_inputs as usize);
       debug_assert_eq!(prev_omegas.len(), self.num_outputs as usize);
@@ -240,7 +243,11 @@ impl NetworkLayer
             }
             else
             {
-               prev_omegas[out_it] * (params.threshold_func_deriv)(out_acts_arr[out_it])
+               prev_omegas[out_it] * if activ {
+                  (params.threshold_func_deriv)(out_acts_arr[out_it])
+               } else {
+                  1.0
+               }
             };
 
             debug_assert!(psi.is_finite() && !psi.is_nan());
@@ -312,6 +319,18 @@ impl NeuralNetwork
       } // NeuralNetwork
    } // pub fn new() -> NeuralNetwork
 
+   pub fn add_noise(&mut self, rng: &mut ThreadRng)
+   {
+      for inp in self.get_inputs().iter_mut()
+      {
+         *inp += 0.2 * rng.sample::<f32,_>(StandardNormal);
+         if rng.gen_bool(0.1)
+         {
+            *inp = 0.0;
+         }
+      }
+   }
+
    /**
     * Gets a mutable reference to the input array of the network.
     * `feed_forward` reads its input from here.
@@ -348,7 +367,8 @@ impl NeuralNetwork
 
          let input_arr = &input_slice[index];
          let dest_output_arr = &mut output_slice[0];
-         layer.feed_forward(input_arr, dest_output_arr, self.train_params.threshold_func);
+         layer.feed_forward(input_arr, dest_output_arr,
+                            self.train_params.threshold_func, index != layer_len - 1);
 
          if index < layer_len - 1
          {
@@ -360,6 +380,19 @@ impl NeuralNetwork
                }
             }
          }
+      }
+
+      // apply softmax
+      let mut sum = 0.0;
+      for i in self.activations.last_mut().unwrap().iter_mut()
+      {
+         *i = i.exp();
+         sum += *i;
+      }
+
+      for i in self.activations.last_mut().unwrap().iter_mut()
+      {
+         *i /= sum;
       }
    } // pub fn feed_forward(&mut self)
 
@@ -377,11 +410,12 @@ impl NeuralNetwork
       debug_assert_eq!(target_out.len(), self.get_outputs().len());
 
       let mut error = 0.0;
+      let targ_sum = target_out.iter().sum::<NumT>();
       for i in 0..self.get_outputs().len()
       {
-         let little_omega = self.get_outputs()[i] - target_out[i];
-         error += little_omega * little_omega;
+         let little_omega = self.get_outputs()[i] * targ_sum - target_out[i];
          self.omegas[INPUT_DERIV][i] = little_omega;
+         error += -target_out[i] * self.get_outputs()[i].ln();
       }
 
       error / self.get_outputs().len() as NumT
@@ -400,6 +434,7 @@ impl NeuralNetwork
    {
       let error = self.calculate_error(target_out);
 
+      let sz = self.layers.len() - 1;
       for (index, layer) in self.layers.iter_mut().enumerate().rev()
       {
          let (inp_deriv_slice, outp_deriv_slice) = self.omegas.split_at_mut(1);
@@ -410,7 +445,7 @@ impl NeuralNetwork
                              &self.dropouts[index + 1],
                              &inp_deriv_slice[0][..layer.num_outputs as usize],
                              &mut outp_deriv_slice[0][..layer.num_inputs as usize],
-                             step);
+                             step, index != sz);
 
          /*
           * the derivatives outputted by this layer become the derivatives
