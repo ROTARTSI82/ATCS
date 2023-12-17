@@ -27,12 +27,12 @@ def dump(file, prefix):
 
         print(f"{img} -> {outp}")
 
-        img = img + 0.2 * np.random.randn(128, 128)
+        # img = img + 0.2 * np.random.randn(128, 128)
 
-        for x in range(128):
-            for y in range(128):
-                if random.random() < 0.1:
-                    img[x, y] = 0
+        # for x in range(128):
+        #     for y in range(128):
+        #         if random.random() < 0.1:
+        #             img[x, y] = 0
 
         cv2.imwrite(f"{prefix}{i//5}_{np.argmax(outp)}.bmp", 256 * img)
 

@@ -6,31 +6,36 @@ import struct
 import json
 
 enc_dict = {i.to_bytes(1, 'big'): i for i in range(256)}
-tokens = [i.to_bytes(1, 'big') for i in range(256)]
-with open("vocab.txt", "rb") as fp:
+tokens = [(i.to_bytes(1, 'big'), -1, -1) for i in range(256)]
+with open("vocab.bin", "rb") as fp:
     vocab = fp.read()
 
 d_model = 512
-vocab_size = 1279  # 767
+vocab_size = 3200  # 767
 ctx = 512
 nhead = 8
-nlayer = 4
+nlayer = 6
 lab_smooth = 0.1
 
 temp = 0.8
-top_k = int(vocab_size * 0.2)
+top_k = None # int(vocab_size * 0.5)
+
+model_file = "big2.bin"
 
 longest = 0
 idx = 256
 for i in range(vocab_size - 256):
-    s = struct.unpack("@L", vocab[:8])[0]
-    utf = vocab[8:8+s]
+    l = struct.unpack("@I", vocab[:4])[0]
+    r = struct.unpack("@I", vocab[4:8])[0]
+    s = struct.unpack("@I", vocab[8:12])[0]
+    
+    utf = vocab[12:12+s]
     if utf == b"newdoc":
         print(i, idx, utf)
     longest = max(longest, len(utf))
     enc_dict[utf] = idx
-    tokens.append(utf)
-    vocab = vocab[8+s:]
+    tokens.append((utf, l, r))
+    vocab = vocab[12+s:]
     idx += 1
 longest = 24  # hardcoding this because
 
@@ -66,15 +71,21 @@ def tokenize(string):
     return dat_encoded
 
 
-# with open("MASTER.txt", "rb") as fp:
-#     master = fp.read()
-#
-# data = tokenize(master)
-# with open('dataset_enc_master.json', 'w') as fp:
-#     json.dump(data, fp)
+def tokenize2(string):
+    stream = [i for i in string]
+    for idx, i in enumerate(tokens[256:]):
+        cpy = []
+        j = 0
+        while j < len(stream):
+            if j < len(stream) - 1 and stream[j] == i[1] and stream[j+1] == i[2]:
+                cpy.append(idx + 256)
+                j += 2
+            else:
+                cpy.append(stream[j])
+                j += 1
+        stream = cpy
+    return stream
 
-# with open('dataset_enc_master.json', 'r') as fp:
-#    data = json.load(fp)
 
 with open("dataset.txt", 'rb') as fp:
     data = fp.read()
@@ -92,10 +103,11 @@ class LanguageModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.vocab_embed = torch.nn.Embedding(vocab_size, d_model)
-        enc_layer = torch.nn.TransformerEncoderLayer(d_model, nhead, activation=torch.nn.ReLU(),
+        enc_layer = torch.nn.TransformerEncoderLayer(d_model, nhead, activation=torch.nn.GELU(),
                                                      batch_first=True, norm_first=True, bias=True, dropout=0.1)
         self.trans = torch.nn.TransformerEncoder(enc_layer,
                                                  nlayer, torch.nn.LayerNorm(d_model, bias=True))
+        self.fnorm = torch.nn.LayerNorm(d_model)
         # todo: come up with a better way of doing prob_out
         self.prob_out = torch.nn.Sequential(torch.nn.Linear(d_model, vocab_size, bias=False))
 
@@ -105,24 +117,25 @@ class LanguageModel(torch.nn.Module):
         t_in = self.vocab_embed(txt) + pos_enc[:ctxlen]
         mask = torch.nn.Transformer.generate_square_subsequent_mask(ctxlen, device=device, dtype=dtype)
         trans = self.trans(t_in, mask=mask, is_causal=True)
-        return self.prob_out(trans)
+        return self.prob_out(self.fnorm(trans))
 
 
-lr = 1.5e-4
+lr = 3e-4
 model = LanguageModel().to(device).train(True)
 opt = torch.optim.AdamW(model.parameters(), lr=lr, eps=1e-5, betas=(0.9, 0.95), weight_decay=0.1)
 loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=lab_smooth)
 
 print(f"{sum(tens.numel() for tens in model.parameters())} parameters")
 
-load = torch.load('discordllm_BIG.txt')
-model.load_state_dict(load['model'], strict=False)
+load = torch.load(model_file)
+model.load_state_dict(load['model'])
 
-start = 0
-# start = load['start']
+start = load['start']
+# start = 0
 
 tot_steps = 1
 warmup = 100
+losses = []
 running = False
 while running:
     opt.zero_grad()
@@ -132,14 +145,17 @@ while running:
     #     g['lr'] = lr
     vec = []
     for minibatch in range(16):
-        # start = random.randint(0, len(data) - 4*4096)
-        toks = tokenize(data[start:start+4*4096])
-        vec.append(toks[:ctx + 1])
-        start += random.randint(-ctx//2, 2*ctx)
-        start = max(0, start)
-        if start >= len(data) - 4*4096:
-            start %= len(data) - 4*4096
-            running = False
+        # rng = random.random() < 0.35
+        cur = random.randint(0, len(data) - 16*ctx)
+        toks = tokenize(data[cur:cur+16*ctx])
+        vec.append(toks[4:ctx + 5])
+
+        # if not rng:
+        #     start += random.randint(ctx, 6*ctx)
+        #     start = max(0, start)
+        #     if start >= len(data) - 16*ctx:
+        #         start %= len(data) - 16*ctx
+        #         running = False
 
     case = torch.tensor(vec, device=device)
     out = model(case[:, :ctx], ctx)
@@ -149,24 +165,39 @@ while running:
     loss.backward()
     torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
     opt.step()
-    print(f"{start}\t{100*start/len(data):.2f}% {lr:.2E}\t{loss.item()}\t{b''.join(tokens[i] for i in data[start:start+16])}")
+    print(f"{start}\t{100*start/len(data):.2f}% {lr:.2E}\t{loss.item()}\t{b''.join(tokens[i][0] for i in data[start:start+16])}")
+    losses.append(loss.item())
 
     if tot_steps % 64 == 0 or not running:
         print("============ saved checkpoint =================")
-        torch.save({'model': model.state_dict(), 'start': start}, 'discordllm_BIG.txt' if running else "FINAL.txt")
+        torch.save({'model': model.state_dict(), 'start': start}, model_file)
     tot_steps += 1
 
+# with open('loss.log', 'w') as fp:
+#     fp.write(str(losses))
+
 generate = True
+txt = b"""
+A foolish consistency is the hobgoblin of little minds, adored by
+little statesmen and philosophers and divines. With consistency a
+great soul has simply nothing to do. He may as well concern himself
+with the shadow on the wall. Speak what you think now in hard words,
+and to-morrow speak what to-morrow thinks in hard words again, though
+it contradict everything you said to-day.--"Ah, so you shall be sure
+to be misunderstood."--Is it so bad, then, to be misunderstood?
+Pythagoras[186] was misunderstood, and Socrates,[187] and Jesus, and
+Luther,[188] and Copernicus,[189] and Galileo,[190] and Newton,[191]
+and every pure and wise spirit that ever took flesh. To be great is"""
 if generate:
-    prompt = tokenize(b" i love")
+    model.eval()
+    prompt = tokenize(txt)
     print(prompt)
 
     case = torch.tensor(prompt[-ctx:], device=device)
     out = torch.softmax(model(case, min(ctx, len(prompt))), dim=1)
-    print(b''.join(tokens[i] for i in torch.argmax(out, dim=1)).decode('utf-8', 'ignore'))
+    print(b''.join(tokens[i][0] for i in torch.argmax(out, dim=1)).decode('utf-8', 'ignore'))
 
-    model.train()
-    for i in range(1024):
+    for i in range(512):
         case = torch.tensor(prompt[-ctx:], device=device)
         logits = model(case, min(ctx, len(prompt))) / temp
         out = torch.softmax(logits, dim=1)
@@ -180,4 +211,4 @@ if generate:
         prompt.append(new.item())
         print(i, tokens[new.item()])
     print('\n')
-    print(b''.join(tokens[i] for i in prompt).decode('utf-8', 'ignore'))
+    print(b''.join(tokens[i][0] for i in prompt).decode('utf-8', 'ignore'))

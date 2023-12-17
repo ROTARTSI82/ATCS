@@ -39,7 +39,7 @@ std::string toktoa(TokType type) {
 }
 
 struct Token {
-  size_t left, right;
+  unsigned left, right;
   TokType type;
   
   bool operator==(const Token &rhs) const {
@@ -58,10 +58,10 @@ struct std::hash<Token>
 
 struct Vocabulary {
   std::vector<Token> tokens;
-  std::unordered_map<std::string, size_t> tokmap;
-  size_t max_toklen = 0;
+  std::unordered_map<std::string, unsigned> tokmap;
+  unsigned max_toklen = 0;
 
-  std::string resolve(size_t tokid) {
+  std::string resolve(unsigned tokid) {
     if (tokid < 256)
       return std::string{static_cast<char>(tokid)};
     if (tokid -256>= tokens.size())
@@ -70,7 +70,7 @@ struct Vocabulary {
     return resolve(tok.left) + resolve(tok.right);
   }
 
-  TokType resolve_type(size_t tokid) {
+  TokType resolve_type(unsigned tokid) {
     if ('a' <= tokid && tokid <= 'z' || 'A' <= tokid && tokid <= 'Z') 
       return ALPH;
     if ('0' <= tokid && tokid <= '9')
@@ -81,7 +81,7 @@ struct Vocabulary {
       return SYM;
     }
     
-    if (tokid == ' ')
+    if (tokid == ' ' || tokid == '\t')
       return SPACE;
     if (tokid == '\n')
       return NEWLINE;
@@ -114,16 +114,16 @@ struct Vocabulary {
   }
 
 
-  void bpe(size_t *stream, size_t size) {
-    size_t *alt = new size_t[size];
-    size_t *deletor = alt;
+  void bpe(unsigned *stream, size_t size) {
+    unsigned *alt = new unsigned[size];
+    unsigned *deletor = alt;
 
-    std::unordered_map<Token, size_t> freqs{};
+    std::unordered_map<Token, unsigned> freqs{};
 
-    for (int vocab_size = 0; vocab_size < 1024; vocab_size++) {
+    for (int vocab_size = 0; vocab_size < 4096 * 2; vocab_size++) {
       Token selected{31415, 271828};
-      size_t maxocc = 0;
-      for (size_t i = 0; i < size - 1; i++) {
+      unsigned maxocc = 0;
+      for (unsigned i = 0; i < size - 1; i++) {
         Token t{stream[i], stream[i+1]};
         freqs[t] += 1;
 
@@ -149,12 +149,12 @@ struct Vocabulary {
         break; // we combined all the tokens we can! or it's just not worth it.
       }
 
-      size_t idx = tokens.size() + 256;
+      unsigned idx = tokens.size() + 256;
       tokens.emplace_back(selected);
       tokmap[resolve(idx)] = idx;
 
-      size_t alt_idx = 0;
-      for (size_t i = 0; i < size; i++) {
+      unsigned alt_idx = 0;
+      for (unsigned i = 0; i < size; i++) {
         if (i < size - 1 && Token{stream[i], stream[i+1]} == selected) {
           alt[alt_idx++] = idx;
           i++;
@@ -178,7 +178,7 @@ struct Vocabulary {
 };
 
 int main() {
-  std::ifstream file("dataset.txt", std::ios::binary | std::ios::ate);
+  std::ifstream file("MASTER.txt", std::ios::binary | std::ios::ate);
   std::streamsize size = file.tellg();
   file.seekg(0, std::ios::beg);
 
@@ -186,22 +186,24 @@ int main() {
   if (file.read((char*)buffer.data(), size))
   {
     Vocabulary vocab;
-    std::vector<size_t> expanded;
+    std::vector<unsigned> expanded;
     for (const auto &i : buffer) {
-      expanded.emplace_back(static_cast<size_t>(i));
+      expanded.emplace_back(static_cast<unsigned>(i));
       if (expanded.back() > 256)
         std::cout << "WTF\n";
     }
     
     vocab.bpe(expanded.data(), expanded.size());
 
-    std::ofstream out("vocab.txt", std::ios::binary);
-    size_t idx = 256;
+    std::ofstream out("vocab.bin", std::ios::binary);
+    unsigned idx = 256;
     for (auto &tok : vocab.tokens) {
       std::string str = vocab.resolve(idx);
-      size_t len = str.length();
+      unsigned len = str.length();
 
-      out.write((char*) &len, sizeof(size_t));
+      out.write((char *) &tok.left, sizeof(unsigned));
+      out.write((char *) &tok.right, sizeof(unsigned));
+      out.write((char*) &len, sizeof(unsigned));
       out.write(str.data(), str.length());
       
       idx++;

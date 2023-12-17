@@ -1,6 +1,9 @@
 import csv
 import json
 import io
+import datetime
+from dateutil import parser
+import time
 
 with open("messages/index.json", 'r') as fp:
     index = json.load(fp)
@@ -24,7 +27,10 @@ for k in index:
 
 master_list = sorted(master_list, key=lambda x: x[0])
 for i in master_list:
+    if i[1] == 'general-guy':
+        continue
+    t = parser.parse(i[0]).timetuple()
     msg = i[2].replace('\n', '\n ')
-    print(f" {msg.strip()}")
+    print(f"\n rotartsi {int(time.mktime(t))} -> {i[1]}\n {msg.strip()}")
     # print(f"[newdoc] {i[0][:7]} {i[1]}\n {msg} {i[3]}".rstrip())
 

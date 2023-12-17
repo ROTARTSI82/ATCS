@@ -1,9 +1,9 @@
 do_training: true
 max_iterations: int 128
 error_cutoff: float 8e-5
-learn_rate: float 1.5e-5
+learn_rate: float 3e-5
 batch_size: int 30
-dropout: float 0.05
+dropout: float 0.1
 betas: float[0.9, 0.95]
 weight_decay: float 0
 epsilon: float 1e-5
@@ -20,7 +20,7 @@ network_topology: int[16384,5]
 activation_function: "tanh"
 
 # "randomize", "from_file"
-initialization_mode: "randomize"
+initialization_mode: "from_file"
 rand_lo: float -0.001
 rand_hi: float 0.001
 
@@ -30,7 +30,7 @@ save_file: "trash.net"
 
 # In the future, I will implement loading training data from a binary file or directory.
 dataset_mode: "from_file"
-dataset_file: "dataset/.secret.data"
+dataset_file: "dataset/train.data"
 case [0,0]: float[0,0,0]
 case [0,1]: float[0,1,1]
 case [1,0]: float[0,1,1]
