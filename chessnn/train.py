@@ -1,20 +1,9 @@
 import torch
 import chess
 import chess.pgn
-import math
-
-from torch.nn import Linear
+from custom_transform import *
 
 import functools, random
-
-dtype = torch.float32
-device = torch.device('cuda')
-chunk = 64
-
-
-def pos_encode(val, num, val_max):
-    # bug: i/2 should be i//2 but too late! i've already trained around that
-    return [val / val_max] + [(math.sin if i%2 == 0 else math.cos)(math.pi * val / 2**(i//2)) for i in range(num*2)]
 
 
 def preprocess(pos: chess.Board, moves):
@@ -55,29 +44,31 @@ def preprocess(pos: chess.Board, moves):
     return torch.tensor(ret, device=device, dtype=dtype), torch.tensor(move_enc, device=device, dtype=dtype)
 
 
-class Model(torch.nn.Module):
+class ChessModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.pos_in = torch.nn.Sequential(Linear(54, 256, bias=True, dtype=dtype),
-                                          torch.nn.GELU()
-                                          )
-        self.moves_in = torch.nn.Sequential(Linear(29, 256, bias=True, dtype=dtype),
-                                            torch.nn.GELU()
-                                            )
-        self.trans = torch.nn.Transformer(d_model=256, nhead=4, num_encoder_layers=8, num_decoder_layers=8,
-                                          dim_feedforward=1024, bias=False,
-                                          norm_first=False, batch_first=True, dropout=0.01, dtype=dtype)
-        self.final_output = torch.nn.Sequential(Linear(256, 1, bias=True, dtype=dtype),
-                                                torch.nn.Softmax(dim=0))
+        self.pos_emb = torch.nn.Parameter(torch.randn(64, d_model))
+        self.mov_src = torch.nn.Embedding(64, d_model)
+        self.mov_dst = torch.nn.Embedding(64, d_model)
+        self.piece_type = torch.nn.Embedding(13, d_model)  # 6-pieces per side plus 1 empty
+        self.fiftymove = torch.nn.Embedding(75, d_model)
+        print(self.fiftymove.weight.shape)
+        self.fiftymove.weight = torch.zeros(75, d_model)
 
-    def forward(self, encoder, decoder):
-        return self.final_output(self.trans(self.pos_in(encoder), self.moves_in(decoder))).view(-1)
+        self.encoder = torch.nn.ModuleList([Attention() for _ in range(n_enc)])
+        self.decoder = torch.nn.ModuleList([Attention() for _ in range(n_dec * 2)])  # cross-attention
+
+        self.encoder_mlp = torch.nn.ModuleList([MLP() for _ in range(n_enc)])
+        self.decoder_mlp = torch.nn.ModuleList([MLP() for _ in range(n_dec)])
+
+    def forward(self, pieces, mov1, mov2):
+        moves = self.mov_src(mov1) + self.mov_dst(mov2)
+        return None
 
 
 print("pytorch loaded - constructing model")
 model = Model().to(device).train(True)
-opt = torch.optim.Adam(model.parameters(), lr=1e-3, eps=1e-5, betas=(0.9, 0.95), weight_decay=0.01)
-# sched = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, gamma=0.975)
+opt = torch.optim.AdamW(model.parameters(), lr=3e-4, eps=1e-5, betas=(0.9, 0.95), weight_decay=0.1)
 loss_fn = torch.nn.CrossEntropyLoss()
 
 dim = sum([functools.reduce(lambda a, b: a * b, list(parameter.shape)) for parameter in model.parameters()])
@@ -96,7 +87,7 @@ if __name__ == "__main__":
     #     random.shuffle(lines)
     #     lines = sorted(lines, key=lambda x: int(x[3]) - (1000 if "opening" in x[7] else 0) - (200 if "advantage" in x[7] else 0) + (100 if "mate" in x[7] else 0))
     games = []
-    with open("/home/shared/chess/Carlsen.pgn" if True else "/home/shared/chess/lichess_db_standard_rated_2016-02.pgn", 'r') as fp:
+    with open("/home/shared/chess/Carlsen.pgn" if False else "/home/shared/chess/lichess_db_standard_rated_2016-02.pgn", 'r') as fp:
         for i in range(chunk):
             g = chess.pgn.read_game(fp)
             if g is None:
@@ -157,7 +148,7 @@ if __name__ == "__main__":
         loss_accum /= float(tot_mov)
         loss_history.append(float(loss_accum))
         loss_accum.backward()
-        # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
 
         tot_pass += passed

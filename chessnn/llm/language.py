@@ -17,12 +17,12 @@ nhead = 8
 nlayer = 6
 lab_smooth = 0.1
 
-temp = 0.8
+temp = 0.6
 top_k = None # int(vocab_size * 0.5)
 
 model_file = "big2.bin"
 
-longest = 0
+longest = 1
 idx = 256
 for i in range(vocab_size - 256):
     l = struct.unpack("@I", vocab[:4])[0]
@@ -110,6 +110,7 @@ class LanguageModel(torch.nn.Module):
         self.fnorm = torch.nn.LayerNorm(d_model)
         # todo: come up with a better way of doing prob_out
         self.prob_out = torch.nn.Sequential(torch.nn.Linear(d_model, vocab_size, bias=False))
+        # self.vocab_embed.weight = self.prob_out.weight
 
     def forward(self, txt, ctxlen):
         # print(txt.shape)
@@ -145,17 +146,17 @@ while running:
     #     g['lr'] = lr
     vec = []
     for minibatch in range(16):
-        # rng = random.random() < 0.35
+        rng = random.random() < 0.35
         cur = random.randint(0, len(data) - 16*ctx)
         toks = tokenize(data[cur:cur+16*ctx])
         vec.append(toks[4:ctx + 5])
 
-        # if not rng:
-        #     start += random.randint(ctx, 6*ctx)
-        #     start = max(0, start)
-        #     if start >= len(data) - 16*ctx:
-        #         start %= len(data) - 16*ctx
-        #         running = False
+        if not rng:
+            start += random.randint(ctx, 6*ctx)
+            start = max(0, start)
+            if start >= len(data) - 16*ctx:
+                start %= len(data) - 16*ctx
+                running = False
 
     case = torch.tensor(vec, device=device)
     out = model(case[:, :ctx], ctx)
@@ -176,26 +177,18 @@ while running:
 # with open('loss.log', 'w') as fp:
 #     fp.write(str(losses))
 
-generate = True
-txt = b"""
-A foolish consistency is the hobgoblin of little minds, adored by
-little statesmen and philosophers and divines. With consistency a
-great soul has simply nothing to do. He may as well concern himself
-with the shadow on the wall. Speak what you think now in hard words,
-and to-morrow speak what to-morrow thinks in hard words again, though
-it contradict everything you said to-day.--"Ah, so you shall be sure
-to be misunderstood."--Is it so bad, then, to be misunderstood?
-Pythagoras[186] was misunderstood, and Socrates,[187] and Jesus, and
-Luther,[188] and Copernicus,[189] and Galileo,[190] and Newton,[191]
-and every pure and wise spirit that ever took flesh. To be great is"""
+generate = False
+txt = """torch.nn.utils.clip_grad_norm_(""".encode('utf-8')
+
 if generate:
     model.eval()
     prompt = tokenize(txt)
     print(prompt)
 
+    print(txt.decode('utf-8'), end='')
     case = torch.tensor(prompt[-ctx:], device=device)
     out = torch.softmax(model(case, min(ctx, len(prompt))), dim=1)
-    print(b''.join(tokens[i][0] for i in torch.argmax(out, dim=1)).decode('utf-8', 'ignore'))
+    #print(b''.join(tokens[i][0] for i in torch.argmax(out, dim=1)).decode('utf-8', 'ignore'))
 
     for i in range(512):
         case = torch.tensor(prompt[-ctx:], device=device)
@@ -209,6 +202,24 @@ if generate:
         new = torch.multinomial(out[-1], num_samples=1)[0]
         # new = torch.argmax(out[-1])
         prompt.append(new.item())
-        print(i, tokens[new.item()])
-    print('\n')
-    print(b''.join(tokens[i][0] for i in prompt).decode('utf-8', 'ignore'))
+        print(tokens[new.item()][0].decode('utf-8', 'ignore'), end='', flush=True)
+    # print(f'\n\n{"="*16}\n\n')
+    # print(b''.join(tokens[i][0] for i in prompt).decode('utf-8', 'ignore'))
+
+
+messages = []
+for a in range(vocab_size):
+    va = model.vocab_embed(torch.tensor([a], device=device))[0]
+    for b in range(a + 1, vocab_size):
+        vb = model.vocab_embed(torch.tensor([b], device=device))[0]
+        # print(va, vb)
+        prod = torch.dot(va, vb)
+        ma, mb = torch.linalg.norm(va), torch.linalg.norm(vb)
+        csim = prod / (ma * mb)
+        ang = torch.acos(csim)
+        messages.append((csim.item(),
+                         f"{tokens[a][0]} + {tokens[b][0]} -> {prod:.4} ({ma:.4}, {mb:.4})\t{csim:.3} {ang * 180 / torch.pi:.8}deg)"))
+    print(f"{tokens[a][0]}\t{100*a/vocab_size}%", flush=True)
+
+for i in sorted(messages, key=lambda x: x[0]):
+    print(i[1], flush=True)
