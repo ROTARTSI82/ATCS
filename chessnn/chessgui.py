@@ -65,7 +65,8 @@ while running:
                 surf.fill((255, 255, 255, 64))
                 screen.blit(surf, rect)
 
-    for i, (move, tp) in enumerate(zip(legals, probs)):
+    for i, (move, tp) in enumerate(zip(legals, probs.view(-1).tolist())):
+        # print(tp)
         prob = float(tp)
         ival = int(255 * prob)
 
