@@ -27,10 +27,31 @@ def to_sq(sel):
 images = dict([load(('w' if color == chess.WHITE else 'b') + chess.piece_name(piece))
                for piece in chess.PIECE_TYPES for color in chess.COLORS])
 
-legals = list(board.legal_moves)
-probs = model(*preprocess(board, legals))
-bestmove = torch.argmax(probs)
+legals = None
+probs = None
+bestmove = None
 
+
+def mod():
+    global legals, probs, bestmove
+    legals = list(board.legal_moves)
+    m_sel, m_ev = model(*[torch.tensor(t, device=device) for t in preprocess(board, legals)])
+    m_wdl = m_ev[0, 0, :3].view(-1)
+    m_cat = m_ev[0, 0, 3:3 + 4].view(-1)
+    m_score = m_ev[0, 0, torch.argmax(m_cat) + 7]
+    probs, wdl, cats, score = (
+        torch.softmax(m_sel.view(-1), dim=0), torch.softmax(m_wdl, dim=0),
+        torch.softmax(m_cat, dim=0), m_score.item()
+    )
+    bestmove = torch.argmax(probs)
+    cat = torch.argmax(cats)
+    print(f"bestmove({probs[bestmove]:.2f}) {legals[bestmove]}")
+    print(f"\twdl {wdl[0]:.2f} {wdl[1]:.2f} {wdl[2]:.2f}")
+    print(f"\t{['cp-', '#-', 'cp+', '#+'][cat]}({cats[cat]:.2f}) ", end='')
+    print(f"{usq(score) * (2 if cat % 2 == 0 else 1):.2f}")
+
+
+mod()
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -44,10 +65,8 @@ while running:
                 print(mov)
                 if board.is_legal(mov):
                     board.push(mov)
-                    legals = list(board.legal_moves)
-                    probs = model(*preprocess(board, legals))
-                    bestmove = torch.argmax(probs)
-                    print(f"bestmove {legals[bestmove]}, raw = {probs}")
+                    mod()
+
                 selection = None
 
     screen.fill("black")
@@ -77,7 +96,9 @@ while running:
                res[1] * (7 - chess.square_rank(move.to_square)) // 8 + res[1] // 16)
 
         if i == bestmove:
-            pygame.draw.line(screen, (255, 0, 0), start, end, 8)
+            pygame.draw.line(screen, (255, 0, 0), start, end, 16)
+        else:
+            pygame.draw.line(screen, (0, 0, ival), start, end, int(16 * max(prob, 1/16)))
 
     pygame.display.flip()
 

@@ -4,23 +4,23 @@ import random
 import math
 import struct
 import json
+from custom_transform import *
 
 enc_dict = {i.to_bytes(1, 'big'): i for i in range(256)}
 tokens = [(i.to_bytes(1, 'big'), -1, -1) for i in range(256)]
 with open("vocab.bin", "rb") as fp:
     vocab = fp.read()
 
-d_model = 512
-vocab_size = 3200  # 767
+vocab_size = 3864  # 767
 ctx = 512
-nhead = 8
-nlayer = 6
-lab_smooth = 0.1
+lab_smooth = 0.4
 
-temp = 0.6
-top_k = None # int(vocab_size * 0.5)
+temp = 0.7
+top_k = int(128)
 
-model_file = "big2.bin"
+model_file = "bigger_boi_weight_tie.bin.v2"
+conf = Config()
+mats = make_rot_mats(conf.d_model, ctx)
 
 longest = 1
 idx = 256
@@ -94,31 +94,23 @@ npdtype = float
 dtype = torch.float32
 device = torch.device('cuda')
 
-pos_enc = [[(math.sin if i%2 == 0 else math.cos)(pos / 10000**(2*(i//2) / d_model)) for i in range(d_model)]
-           for pos in range(ctx)]
-pos_enc = torch.tensor(pos_enc, dtype=dtype, device=device)
-
 
 class LanguageModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.vocab_embed = torch.nn.Embedding(vocab_size, d_model)
-        enc_layer = torch.nn.TransformerEncoderLayer(d_model, nhead, activation=torch.nn.GELU(),
-                                                     batch_first=True, norm_first=True, bias=True, dropout=0.1)
-        self.trans = torch.nn.TransformerEncoder(enc_layer,
-                                                 nlayer, torch.nn.LayerNorm(d_model, bias=True))
-        self.fnorm = torch.nn.LayerNorm(d_model)
-        # todo: come up with a better way of doing prob_out
-        self.prob_out = torch.nn.Sequential(torch.nn.Linear(d_model, vocab_size, bias=False))
-        # self.vocab_embed.weight = self.prob_out.weight
+        self.vocab_embed = torch.nn.Embedding(vocab_size, conf.d_model)
+        self.encoder = torch.nn.ModuleList([Block(conf, causal=True) for _ in range(12)])
+        self.fnorm = RMSNorm(conf.d_model)
+        self.prob_out = torch.nn.Sequential(torch.nn.Linear(conf.d_model, vocab_size, bias=False))
+        self.vocab_embed.weight = self.prob_out[0].weight
 
-    def forward(self, txt, ctxlen):
+    def forward(self, txt):
         # print(txt.shape)
         # print(self.vocab_embed(txt).shape, pos_enc[:ctxlen].shape)
-        t_in = self.vocab_embed(txt) + pos_enc[:ctxlen]
-        mask = torch.nn.Transformer.generate_square_subsequent_mask(ctxlen, device=device, dtype=dtype)
-        trans = self.trans(t_in, mask=mask, is_causal=True)
-        return self.prob_out(self.fnorm(trans))
+        t_in = rope(self.vocab_embed(txt), mats)
+        for layer in self.encoder:
+            t_in = layer(t_in)
+        return self.prob_out(self.fnorm(t_in))
 
 
 lr = 3e-4
@@ -126,13 +118,13 @@ model = LanguageModel().to(device).train(True)
 opt = torch.optim.AdamW(model.parameters(), lr=lr, eps=1e-5, betas=(0.9, 0.95), weight_decay=0.1)
 loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=lab_smooth)
 
-print(f"{sum(tens.numel() for tens in model.parameters())} parameters")
+print(f"{sum(tens.numel() for tens in model.parameters()) / 1000000} million parameters")
 
 load = torch.load(model_file)
 model.load_state_dict(load['model'])
 
 start = load['start']
-# start = 0
+start = len(data) - 1024*4096
 
 tot_steps = 1
 warmup = 100
@@ -145,40 +137,43 @@ while running:
     # for g in opt.param_groups:
     #     g['lr'] = lr
     vec = []
-    for minibatch in range(16):
-        rng = random.random() < 0.35
-        cur = random.randint(0, len(data) - 16*ctx)
+    for minibatch in range(12):
+        rng = random.random() < 1/3
+        cur = random.randint(0, len(data) - 16*ctx) if rng else start
         toks = tokenize(data[cur:cur+16*ctx])
         vec.append(toks[4:ctx + 5])
 
         if not rng:
-            start += random.randint(ctx, 6*ctx)
+            start += random.randint(ctx, 8*ctx)
             start = max(0, start)
             if start >= len(data) - 16*ctx:
                 start %= len(data) - 16*ctx
                 running = False
 
     case = torch.tensor(vec, device=device)
-    out = model(case[:, :ctx], ctx)
+    out = model(case[:, :ctx])
 
     targ = case[:, 1:].reshape(-1)
     loss = loss_fn(out.view(-1, vocab_size), targ)
     loss.backward()
     torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
     opt.step()
-    print(f"{start}\t{100*start/len(data):.2f}% {lr:.2E}\t{loss.item()}\t{b''.join(tokens[i][0] for i in data[start:start+16])}")
+    print(f"{start}\t{100*start/len(data):.2f}% {lr:.2E}\t{loss.item()}\t{b''.join(tokens[i][0] for i in data[start:start+48])}")
     losses.append(loss.item())
 
     if tot_steps % 64 == 0 or not running:
         print("============ saved checkpoint =================")
-        torch.save({'model': model.state_dict(), 'start': start}, model_file)
+        torch.save({'model': model.state_dict(), 'start': start}, model_file + ".v2")
+        with open('loss.csv', 'a') as fp:
+            fp.write("".join([", " + str(a) for a in losses]))
+            losses = []
     tot_steps += 1
 
-# with open('loss.log', 'w') as fp:
-#     fp.write(str(losses))
 
-generate = False
-txt = """torch.nn.utils.clip_grad_norm_(""".encode('utf-8')
+generate = True
+txt = """
+ i'm a creep, i'm a weirdo
+""".encode('utf-8')
 
 if generate:
     model.eval()
@@ -186,13 +181,13 @@ if generate:
     print(prompt)
 
     print(txt.decode('utf-8'), end='')
-    case = torch.tensor(prompt[-ctx:], device=device)
-    out = torch.softmax(model(case, min(ctx, len(prompt))), dim=1)
+    case = torch.tensor([prompt[-ctx:]], device=device)
+    out = torch.softmax(model(case)[0], dim=1)
     #print(b''.join(tokens[i][0] for i in torch.argmax(out, dim=1)).decode('utf-8', 'ignore'))
 
     for i in range(512):
-        case = torch.tensor(prompt[-ctx:], device=device)
-        logits = model(case, min(ctx, len(prompt))) / temp
+        case = torch.tensor([prompt[-ctx:]], device=device)
+        logits = model(case)[0] / temp
         out = torch.softmax(logits, dim=1)
 
         # from nanogpt
@@ -207,6 +202,7 @@ if generate:
     # print(b''.join(tokens[i][0] for i in prompt).decode('utf-8', 'ignore'))
 
 
+"""
 messages = []
 for a in range(vocab_size):
     va = model.vocab_embed(torch.tensor([a], device=device))[0]
@@ -223,3 +219,4 @@ for a in range(vocab_size):
 
 for i in sorted(messages, key=lambda x: x[0]):
     print(i[1], flush=True)
+"""
