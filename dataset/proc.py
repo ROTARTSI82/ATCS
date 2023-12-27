@@ -8,7 +8,7 @@ hh = 1024 + 256
 tw = 128
 th = 128
 
-blackout = 400
+blackout = 600
 
 
 def encode(start, end, filename):
@@ -29,15 +29,14 @@ def encode(start, end, filename):
         # img = img // div * div + div // 2
         # img = img.astype(float) / 256.0
 
-        np.clip(img, 32, 256, out=img)
+        # np.clip(img, 64, 256, out=img)
 
         print(np.max(img), np.min(img), img)
 
-
-        # img[img < 78] = 0
-        img[:blackout, :] = 0
+        # img[:blackout, :] = 0
         img[-blackout:, :] = 0
-        img[:, :blackout] = 0
+        # img[:, :blackout] = 0
+        # img[:, -blackout:] = 0
 
         w, h = img.shape
         grid = np.mgrid[0:w:1j*w, 0:h:1j*h]
@@ -46,14 +45,17 @@ def encode(start, end, filename):
         divisor = img.reshape(-1).sum()
         com = np.sum(col_x, axis=1) / divisor
 
-        cx, cy = int(com[0]), int(com[1])
+        cx, cy = int(com[0]) - 300, int(com[1])
+        img[img < 32] = 0
         img = cv2.GaussianBlur(img, (51, 51), 0)
+        # cv2.imshow('img', img)
+        # cv2.waitKey()
         img = cv2.resize(img[cx-hw:cx+hw, cy-hh:cy+hh], (tw, th), interpolation=cv2.INTER_CUBIC)
         # pos = (pos[1], pos[0])
         print(img, cx, cy)
         # cv2.imshow('img', cv2.circle(img, (tw // 2, th // 2), radius=10, color=(0,0,0), thickness=10))
 
-        clas = (i-1) % 5
+        clas = cnt % 5
         name = f"hand{cnt//5}_{clas + 1}"
         # cv2.imwrite(name + ".bmp", img)
         cnt += 1
@@ -61,12 +63,12 @@ def encode(start, end, filename):
         for b in img.reshape(-1):
             db += struct.pack(">f", float(b) / 256)
         for b in range(5):
-            db += struct.pack('>f', float(1 if b == clas else 0))
+            db += struct.pack('>f', float(1.0 if b == clas else 0))
         # cv2.waitKey()
 
     with open(filename, 'wb') as fp:
         fp.write(db)
 
 
-encode(1751, 1775, "train.data")
-encode(1776, 1780, "validate.data")
+encode(1899, 1899+24, "train.data")
+encode(1899+25, 1928, "validate.data")

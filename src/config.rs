@@ -43,6 +43,7 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Read;
 use std::ops::Range;
+use rand_distr::StandardNormal;
 
 /**
  * The type of the values contained in the network
@@ -330,7 +331,11 @@ fn set_initialization_mode(net: &mut NeuralNetwork, init_mode: &str,
          expect_config!((Some(Numeric(hi)), Some(Numeric(lo))),
                         (config.get("rand_hi"), config.get("rand_lo")),
                         randomize_network(net, *lo..*hi));
-      }
+      },
+      "smart_random" =>
+      {
+         smart_random(net);
+      },
       "fixed_value" => todo!("not implemented"),
       "from_file" =>
       {
@@ -373,6 +378,22 @@ fn randomize_network(net: &mut NeuralNetwork, range: Range<NumT>)
       }
    }
 } // fn randomize_network(net: &mut NeuralNetwork, range: Range<NumT>)
+
+fn smart_random(net: &mut NeuralNetwork)
+{
+   let mut rng = thread_rng();
+
+   let nlayers = net.layers.len();
+   for (idx, layer) in net.layers.iter_mut().enumerate()
+   {
+      let gain = if idx < nlayers { 1.41414 } else { 1.0 };
+
+      for weight in layer.weights.iter_mut()
+      {
+         *weight = gain * rng.sample::<NumT,_>(StandardNormal) / layer.num_inputs as NumT;
+      }
+   }
+}
 
 /**
  * Reads/parses the configuration from the specified file name, returning it as

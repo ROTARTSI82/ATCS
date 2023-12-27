@@ -16,3 +16,4 @@ cpp/cmake-build-debug
 
 **/cmake-build-debug
 **/*.class
+vis/input*.png

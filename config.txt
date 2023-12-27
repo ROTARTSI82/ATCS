@@ -1,5 +1,5 @@
-do_training: true
-max_iterations: int 128
+do_training: false
+max_iterations: int 16
 error_cutoff: float 8e-5
 learn_rate: float 3e-5
 batch_size: int 30
@@ -11,26 +11,26 @@ epsilon: float 1e-5
 print_weights: false
 
 # how often to print out training loss (in # of iterations)
-printout_period: int 8
+printout_period: int 1
 checkpoint_period: int 2
 
-network_topology: int[16384,5]
+network_topology: int[16384,1600,160,5]
 
 # "sigmoid", "tanh", or "leaky_relu"
-activation_function: "tanh"
+activation_function: "leaky_relu"
 
-# "randomize", "from_file"
+# "randomize", "from_file", "smart_random"
 initialization_mode: "from_file"
 rand_lo: float -0.001
 rand_hi: float 0.001
 
 # load_file is not used with initialization_mode="randomize"
-load_file: "trash.net"
+load_file: "image_rec_sm.net"
 save_file: "trash.net"
 
 # In the future, I will implement loading training data from a binary file or directory.
 dataset_mode: "from_file"
-dataset_file: "dataset/train.data"
+dataset_file: "dataset/validate.data"
 case [0,0]: float[0,0,0]
 case [0,1]: float[0,1,1]
 case [1,0]: float[0,1,1]
