@@ -77,7 +77,7 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
 
       network.apply_deltas();
 
-      loss /= dataset.len() as NumT;
+      loss /= network.batch_size as NumT;
       if iteration % network.printout_period == 0
       {
          println!("loss={:.6}\tacc={:.2}\tλ={:.6}\tit={}",

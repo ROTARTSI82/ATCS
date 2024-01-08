@@ -1,4 +1,5 @@
 import numpy as np
+from torchviz import make_dot
 import torch
 import random
 import math
@@ -13,9 +14,9 @@ with open("vocab.bin", "rb") as fp:
 
 vocab_size = 3864  # 767
 ctx = 512
-lab_smooth = 0.4
+lab_smooth = 0.1
 
-temp = 0.7
+temp = 0.8
 top_k = int(128)
 
 model_file = "bigger_boi_weight_tie.bin.v2"
@@ -92,7 +93,6 @@ with open("dataset.txt", 'rb') as fp:
 
 npdtype = float
 dtype = torch.float32
-device = torch.device('cuda')
 
 
 class LanguageModel(torch.nn.Module):
@@ -104,7 +104,7 @@ class LanguageModel(torch.nn.Module):
         self.prob_out = torch.nn.Sequential(torch.nn.Linear(conf.d_model, vocab_size, bias=False))
         self.vocab_embed.weight = self.prob_out[0].weight
 
-    def forward(self, txt):
+    def forward(self, txt, mats):
         # print(txt.shape)
         # print(self.vocab_embed(txt).shape, pos_enc[:ctxlen].shape)
         t_in = rope(self.vocab_embed(txt), mats)
@@ -114,14 +114,17 @@ class LanguageModel(torch.nn.Module):
 
 
 lr = 3e-4
-model = LanguageModel().to(device).train(True)
-opt = torch.optim.AdamW(model.parameters(), lr=lr, eps=1e-5, betas=(0.9, 0.95), weight_decay=0.1)
+model_raw = LanguageModel().to(device).train(True)
+opt = torch.optim.AdamW(model_raw.parameters(), lr=lr, eps=1e-5, betas=(0.9, 0.95), weight_decay=0.1)
 loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=lab_smooth)
 
-print(f"{sum(tens.numel() for tens in model.parameters()) / 1000000} million parameters")
+print(f"{sum(tens.numel() for tens in model_raw.parameters()) / 1000000} million parameters")
 
-load = torch.load(model_file)
-model.load_state_dict(load['model'])
+load = torch.load(model_file, map_location=device)
+model_raw.load_state_dict(load['model'])
+# model = torch.jit.script(model_raw)
+model = model_raw
+print(model)
 
 start = load['start']
 start = len(data) - 1024*4096
@@ -170,9 +173,10 @@ while running:
     tot_steps += 1
 
 
+# torch.autograd.set_grad_enabled(False)
 generate = True
 txt = """
- i'm a creep, i'm a weirdo
+arma virumque cano, Troiae qui primus ab oris Italiam
 """.encode('utf-8')
 
 if generate:
@@ -182,13 +186,16 @@ if generate:
 
     print(txt.decode('utf-8'), end='')
     case = torch.tensor([prompt[-ctx:]], device=device)
-    out = torch.softmax(model(case)[0], dim=1)
+    out = torch.softmax(model(case, mats)[0], dim=1)
     #print(b''.join(tokens[i][0] for i in torch.argmax(out, dim=1)).decode('utf-8', 'ignore'))
 
     for i in range(512):
         case = torch.tensor([prompt[-ctx:]], device=device)
-        logits = model(case)[0] / temp
+        logits = model(case, mats)[0] / temp
         out = torch.softmax(logits, dim=1)
+
+        if i == 300:
+            make_dot(logits, params=dict(model.named_parameters()), show_attrs=True, show_saved=True).render("attached", format="svg")
 
         # from nanogpt
         if top_k is not None:
@@ -220,3 +227,5 @@ for a in range(vocab_size):
 for i in sorted(messages, key=lambda x: x[0]):
     print(i[1], flush=True)
 """
+
+# torch.jit.save(model, 'test.pt')

@@ -360,9 +360,9 @@ impl NeuralNetwork
       for (index, layer) in self.layers.iter_mut().enumerate()
       {
          /*
-         * rust's borrow checking will not allow us to borrow 2 mutable values from the
-         * same slice at the same time, so we must split the slice into 2 halves first.
-         */
+          * rust's borrow checking will not allow us to borrow 2 mutable values from the
+          * same slice at the same time, so we must split the slice into 2 halves first.
+          */
          let (input_slice, output_slice) = self.activations.split_at_mut(index + 1);
 
          let input_arr = &input_slice[index];

@@ -2,7 +2,7 @@ import struct
 import cv2
 import numpy as np
 
-with open('image_rec_sm_confident.net', 'rb') as fp:
+with open('min.net', 'rb') as fp:
     data = fp.read()
 
 assert data[:15] == b"ATNeuralNetwork"
@@ -45,7 +45,7 @@ for i in range(layers):
     if write_dreams and x == 128 * 128:
         print("\twriting input pngs")
         for k in range(y):
-            print(f"\tinput {k} {statsof(images[k])}")
+            # print(f"\tinput {k} {statsof(images[k])}")
             arr = images[k].reshape((128, 128, 3))
             mx = np.max(np.abs(arr.flatten()))
             arr *= 256 / mx

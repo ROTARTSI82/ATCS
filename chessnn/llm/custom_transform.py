@@ -4,7 +4,7 @@ from math import sin, cos
 from dataclasses import dataclass
 
 dtype = torch.float32
-device = torch.device('cuda')
+device = torch.device('cpu')
 
 
 @dataclass
@@ -36,7 +36,10 @@ def rope(batch, mats):
 class Attention(torch.nn.Module):
     def __init__(self, conf: Config, causal=False, do_q_proj=True, bias_out=False):
         super().__init__()
-        self.conf = conf
+        self.v_size = conf.v_size
+        self.qk_size = conf.qk_size
+        self.d_model = conf.d_model
+        self.n_head = conf.n_head
         self.causal = causal
         self.kv_proj = torch.nn.Linear(conf.d_model, (conf.qk_size + conf.v_size) * conf.n_head, bias=False)
         self.q_proj = torch.nn.Linear(conf.d_model, conf.qk_size * conf.n_head, bias=False) if do_q_proj else None
@@ -54,13 +57,12 @@ class Attention(torch.nn.Module):
         # print(B, BA, C, CA)
         assert self.q_proj is None or B == BA and C == CA
 
-        c = self.conf
         # ultra cursed as fuck!
-        q = (self.q_proj(x) if self.q_proj is not None else x).split([c.qk_size * c.n_head], dim=2)[0]
-        k, v = self.kv_proj(attn).split([c.qk_size * c.n_head, c.v_size * c.n_head], dim=2)
-        q = q.view(B, T, c.n_head, c.qk_size).transpose(1, 2)  # B x n_heads x T x qk_size
-        k = k.view(BA, TA, c.n_head, c.qk_size).transpose(1, 2)  # BA x n_heads x TA x qk_size
-        v = v.view(BA, TA, c.n_head, c.v_size).transpose(1, 2)  # BA x n_heads x TA x v_size
+        q = (self.q_proj(x) if self.q_proj is not None else x).split([self.qk_size * self.n_head], dim=2)[0]
+        k, v = self.kv_proj(attn).split([self.qk_size * self.n_head, self.v_size * self.n_head], dim=2)
+        q = q.view(B, T, self.n_head, self.qk_size).transpose(1, 2)  # B x n_heads x T x qk_size
+        k = k.view(BA, TA, self.n_head, self.qk_size).transpose(1, 2)  # BA x n_heads x TA x qk_size
+        v = v.view(BA, TA, self.n_head, self.v_size).transpose(1, 2)  # BA x n_heads x TA x v_size
 
         """
         kT = k.transpose(2, 3)  # B x n_heads x qk_size x T
@@ -68,11 +70,11 @@ class Attention(torch.nn.Module):
         # encoder: no masking of the correlations happens here
         o = correlations @ v # B x n_heads x T x v_size
         """
-        mask = torch.nn.Transformer.generate_square_subsequent_mask(T, device=device) if self.causal else None
-        o = torch.nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=c.drop,
-                                                             is_causal=self.causal, attn_mask=mask)
+        # mask = torch.nn.Transformer.generate_square_subsequent_mask(T, device=device) if self.causal else None
+        o = torch.nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=0.0,
+                                                             is_causal=self.causal) # attn_mask=mask)
 
-        o_shaped = o.transpose(1, 2).reshape(B, T, c.n_head * c.v_size)
+        o_shaped = o.transpose(1, 2).reshape(B, T, self.n_head * self.v_size)
         return self.final_dropout(self.out_proj(o_shaped))  # B x T x C
 
 
@@ -108,15 +110,15 @@ class Block(torch.nn.Module):
         x = x + self.attn2(norm_x2, cross)
         return x
 
-    def forward(self, x, cross=None):
-        if cross is not None and self.cross_first:
-            x = self.do_cross(x, cross)
+    def forward(self, x):
+        # if cross is not None and self.cross_first:
+        #     x = self.do_cross(x, cross)
         if self.attn1 is not None:
             norm_x = self.norm_a1(x)
             x = x + self.attn1(norm_x, norm_x)
 
-        if cross is not None and not self.cross_first:
-            x = self.do_cross(x, cross)
+        # if cross is not None and not self.cross_first:
+        #     x = self.do_cross(x, cross)
         if self.mlp is not None:
             x = x + self.mlp(x)
         return x

@@ -25,12 +25,12 @@ def dump(file, prefix):
         outp = np.array([struct.unpack(">f", data[i*4:i*4+4])[0] for i in range(out_dim)])
         data = data[4*out_dim:]
 
-        img = img + 0.2 * np.random.randn(128, 128)
-
-        for x in range(128):
-             for y in range(128):
-                 if random.random() < 0.1:
-                     img[x, y] = 0
+        # img = img + 0.2 * np.random.randn(128, 128)
+        #
+        # for x in range(128):
+        #     for y in range(128):
+        #         if random.random() < 0.1:
+        #             img[x, y] = 0
 
         # print(f"{img} -> {outp}")
         print(f"{np.mean(img)} {np.std(img)} [{np.min(img)}, {np.max(img)}]")

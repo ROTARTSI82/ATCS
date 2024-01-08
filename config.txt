@@ -1,9 +1,9 @@
 do_training: false
-max_iterations: int 16
+max_iterations: int 128
 error_cutoff: float 8e-5
-learn_rate: float 3e-5
+learn_rate: float 3e-4
 batch_size: int 30
-dropout: float 0.1
+dropout: float 0.06
 betas: float[0.9, 0.95]
 weight_decay: float 0
 epsilon: float 1e-5
