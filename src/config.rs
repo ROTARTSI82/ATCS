@@ -36,19 +36,20 @@
  */
 use crate::config::ConfigValue::{Boolean, FloatList, IntList, Integer, Numeric, Text};
 use crate::network::{Datapoint, NetworkLayer, NeuralNetwork};
-use crate::serialize::read_net_from_file;
+use crate::serialize::{load_dataset_from_file, read_net_from_file};
 
 use rand::prelude::*;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Read;
 use std::ops::Range;
+use rand_distr::StandardNormal;
 
 /**
  * The type of the values contained in the network
  * has been extracted to a type variable for easy modification.
  */
-pub type NumT = f64;
+pub type NumT = f32;
 pub type FuncT = fn(NumT) -> NumT;
 
 /**
@@ -70,12 +71,13 @@ pub enum ConfigValue
  * These are the parameters of the configuration that are printed out
  * before running the network.
  */
-const PARAMS_TO_PRINT: [&str; 6] = ["rand_lo",
-                                    "rand_hi",
-                                    "network_topology",
-                                    "max_iterations",
-                                    "learn_rate",
-                                    "error_cutoff"];
+const PARAMS_TO_PRINT: [&str; 7] = ["rand_lo",
+   "rand_hi",
+   "network_topology",
+   "max_iterations",
+   "learn_rate",
+   "error_cutoff",
+   "activation_function"];
 
 /**
  * This macro attempts to unwrap a certain value (specified by the expression `str_name`)
@@ -86,10 +88,8 @@ const PARAMS_TO_PRINT: [&str; 6] = ["rand_lo",
  * For examples, see usages in `set_and_echo_config`
  */
 #[macro_export]
-macro_rules! expect_config
-{
-   ($name: pat, $str_name: expr, $body: expr) =>
-   {
+macro_rules! expect_config {
+   ($name: pat, $str_name: expr, $body: expr) => {
       if let $name = $str_name
       {
          $body
@@ -121,7 +121,6 @@ pub fn make_err(msg: &str) -> std::io::Error
  * including the final output layer.
  *
  * `do_training` MUST be a `Boolean` specifying whether to train the network.
- * If it is true, extra memory must be allocated to store the thetas_out
  *
  * If `do_training` is true, the following values are also required:
  * `Integer` values of `max_iterations` and `printout_period`,
@@ -193,6 +192,10 @@ pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, Co
                      config.get("learn_rate"),
                      net.learn_rate = *lambda);
 
+      expect_config!(Some(Numeric(decay)), config.get("learn_decay"), net.learn_decay = *decay);
+      expect_config!(Some(Numeric(noise)), config.get("add_noise"), net.add_noise = *noise);
+      expect_config!(Some(Numeric(drop)), config.get("input_dropout"), net.dropout = *drop);
+
       expect_config!(Some(Integer(max_iters)),
                      config.get("max_iterations"),
                      net.max_iterations = *max_iters);
@@ -228,10 +231,26 @@ pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, Co
  * as a `FloatList`. The array in the `case [..]` key are parsed in the same way with
  * rust parsing, so e-notation is supported in all cases.
  */
-pub fn load_dataset_from_config_txt(net: &NeuralNetwork, config: &BTreeMap<String, ConfigValue>,
+pub fn load_dataset_from_config_txt(net: &mut NeuralNetwork, config: &BTreeMap<String, ConfigValue>,
                                     dataset_out: &mut Vec<Datapoint>)
                                     -> Result<(), std::io::Error>
 {
+   let expected = (net.layers.first().unwrap().num_inputs as usize,
+                   net.layers.last().unwrap().num_outputs as usize);
+
+   expect_config!(Some(Text(mode)), config.get("dataset_mode"), {
+      if mode == "from_file"
+      {
+         expect_config!(Some(Text(filename)), config.get("dataset_file"), {
+            load_dataset_from_file(dataset_out, filename, expected)?;
+            return Ok(());
+         });
+      } else if mode != "truth_table"
+      {
+         Err(make_err("unrecognized `dataset_mode` config value"))?;
+      }
+   });
+
    for (key, value) in config.iter().filter(|(key, _)| key.starts_with("case"))
    {
       if let FloatList(outp) = value
@@ -246,8 +265,7 @@ pub fn load_dataset_from_config_txt(net: &NeuralNetwork, config: &BTreeMap<Strin
                       .collect::<Result<Vec<_>, _>>()
                       .map_err(|_| err_msg())?;
 
-         if vec.len() != net.layers.first().unwrap().num_inputs as usize
-            || outp.len() != net.layers.last().unwrap().num_outputs as usize
+         if vec.len() != expected.0 || outp.len() != expected.1
          {
             Err(make_err("case size does not match configured input/output size"))?;
          }
@@ -290,6 +308,11 @@ fn set_initialization_mode(net: &mut NeuralNetwork, init_mode: &str,
                         (config.get("rand_hi"), config.get("rand_lo")),
                         randomize_network(net, *lo..*hi));
       }
+      "smart_random" =>
+      {
+         expect_config!(Some(Numeric(gain)), config.get("gain"), net.gain = *gain);
+         smart_random(net);
+      },
       "fixed_value" => todo!("not implemented"),
       "from_file" =>
       {
@@ -300,19 +323,19 @@ fn set_initialization_mode(net: &mut NeuralNetwork, init_mode: &str,
       _ => Err(make_err("invalid 'initialization_mode' in config"))?,
    } // match init_mode
 
-   expect_config!(Some(Boolean(print)),
-                  config.get("print_weights"), {
-         if *print
+   expect_config!(Some(Boolean(print)), config.get("print_weights"),
+   {
+      if *print
+      {
+         for (layer_no, layer) in net.layers.iter().enumerate()
          {
-            for (layer_no, layer) in net.layers.iter().enumerate()
+            println!("===== Layer {} weights =====", layer_no);
+            for col in layer.weights.chunks(layer.num_outputs as usize)
             {
-               println!("===== Layer {} weights =====", layer_no);
-               for col in layer.weights.chunks(layer.num_outputs as usize)
-               {
-                  println!("{:#.3?}", col);
-               }
+               println!("{:#.3?}", col);
             }
          }
+      }
    }); // expect_config!(Some(Boolean(print)), ...)
 
    Ok(())
@@ -324,7 +347,7 @@ fn set_initialization_mode(net: &mut NeuralNetwork, init_mode: &str,
  */
 fn randomize_network(net: &mut NeuralNetwork, range: Range<NumT>)
 {
-   let mut rng = rand::thread_rng();
+   let mut rng = thread_rng();
    for layer in net.layers.iter_mut()
    {
       for weight in layer.weights.iter_mut()
@@ -333,6 +356,20 @@ fn randomize_network(net: &mut NeuralNetwork, range: Range<NumT>)
       }
    }
 } // fn randomize_network(net: &mut NeuralNetwork, range: Range<NumT>)
+
+fn smart_random(net: &mut NeuralNetwork)
+{
+   let mut rng = thread_rng();
+   let gain = net.gain;
+
+   for layer in net.layers.iter_mut()
+   {
+      for weight in layer.weights.iter_mut()
+      {
+         *weight = gain * rng.sample::<NumT,_>(StandardNormal) / layer.num_inputs as NumT;
+      }
+   }
+}
 
 /**
  * Reads/parses the configuration from the specified file name, returning it as

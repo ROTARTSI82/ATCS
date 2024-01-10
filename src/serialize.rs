@@ -13,7 +13,7 @@
  * `fn read_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(), std::io::Error>`
  */
 use crate::config::{make_err, NumT};
-use crate::network::NeuralNetwork;
+use crate::network::{Datapoint, NeuralNetwork};
 
 use std::fs::File;
 use std::io::{Read, Write};
@@ -170,3 +170,50 @@ pub fn read_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(),
    println!("loaded neural network from file `{}`", filename);
    Ok(())
 } // pub fn load_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(), io::Error>
+
+pub fn load_dataset_from_file(db: &mut Vec<Datapoint>, filename: &str,
+                              expected_io: (usize, usize)) -> Result<(), std::io::Error>
+{
+   let mut bytes = Vec::new();
+   {
+      let mut file = File::open(filename)?;
+      file.read_to_end(&mut bytes)?;
+   }
+
+   if !bytes.starts_with("ATNeuralDataset".as_bytes())
+   {
+      Err(make_err("missing ATNeuralDataset header"))?;
+   }
+
+   let bytes = &bytes[15..];
+   let num_cases = consume_i32(bytes)? as usize;
+   let input_dims = consume_i32(&bytes[I32_SIZE..])? as usize;
+   let output_dims = consume_i32(&bytes[2 * I32_SIZE..])? as usize;
+
+   if input_dims != expected_io.0 || output_dims != expected_io.1
+   {
+      Err(make_err("mismatch between config network input/output size and dataset shape"))?;
+   }
+
+   let bytes = &bytes[3 * I32_SIZE..];
+   let mut new = (0..num_cases).map(|c| -> Result<Datapoint, std::io::Error> {
+      let bytes = &bytes[c * (input_dims + output_dims) * I32_SIZE..];
+      let inps = (0..input_dims).map(|i| -> Result<NumT, _> {
+         consume_num(&bytes[i * I32_SIZE..])
+      }).collect::<Result<Vec<_>, _>>()?.into_boxed_slice();
+
+      let bytes = &bytes[input_dims * I32_SIZE..];
+      let outs = (0..output_dims).map(|i| -> Result<NumT, _> {
+         consume_num(&bytes[i * I32_SIZE..])
+      }).collect::<Result<Vec<_>, _>>()?.into_boxed_slice();
+
+      Ok(Datapoint {
+         inputs: inps,
+         expected_outputs: outs,
+      })
+   }).collect::<Result<Vec<Datapoint>, _>>()?;
+   db.append(&mut new);
+
+   println!("Loaded {num_cases} datapoints from {filename}");
+   Ok(())
+}

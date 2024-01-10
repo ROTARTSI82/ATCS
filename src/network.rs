@@ -1,3 +1,6 @@
+use rand::prelude::ThreadRng;
+use rand::Rng;
+use rand_distr::StandardNormal;
 /**
  * network.rs
  * By Grant Yang
@@ -93,10 +96,14 @@ pub struct NeuralNetwork
     * in the documentation for `set_and_echo_config` in `config.rs`.
     */
    pub learn_rate: NumT,
+   pub learn_decay: NumT,
    pub error_cutoff: NumT,
    pub max_iterations: i32,
    pub printout_period: i32,
    pub do_training: bool,
+   pub add_noise: NumT,
+   pub dropout: NumT,
+   pub gain: NumT
 } // pub struct NeuralNetwork
 
 /**
@@ -268,6 +275,8 @@ impl NeuralNetwork
    {
       NeuralNetwork
       {
+         add_noise: 0.0,
+         dropout: 0.0,
          layers: Box::new([]),
          activations: Box::new([]),
          threshold_func: ident,
@@ -277,7 +286,9 @@ impl NeuralNetwork
          max_iterations: 0,
          error_cutoff: 0.0,
          do_training: false,
-         printout_period: 0
+         printout_period: 0,
+         learn_decay: 0.0,
+         gain: 0.0
       } // NeuralNetwork
    } // pub fn new() -> NeuralNetwork
 
@@ -297,6 +308,19 @@ impl NeuralNetwork
    pub fn get_outputs(&self) -> &[NumT]
    {
       &self.activations[self.activations.len() - 1]
+   }
+
+   pub fn add_noise(&mut self, rng: &mut ThreadRng)
+   {
+      let (noise, dropout) = (self.add_noise, self.dropout);
+      for inp in self.get_inputs().iter_mut()
+      {
+         *inp = NumT::min(*inp + noise * rng.sample::<f32, _>(StandardNormal), 1.0);
+         if rng.gen_bool(dropout as f64) || *inp < 0.0
+         {
+            *inp = 0.0;
+         }
+      }
    }
 
    /**

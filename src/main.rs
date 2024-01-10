@@ -22,11 +22,20 @@ mod serialize;
 
 extern crate core;
 
-use crate::config::ConfigValue::Text;
+use crate::config::ConfigValue::{Text, Numeric};
 use crate::config::*;
 use crate::network::{Datapoint, NeuralNetwork};
 use crate::serialize::write_net_to_file;
 use std::error::Error;
+use rand::thread_rng;
+
+/**
+ * Get index of maximal element
+ */
+fn max_idx(arr: &[NumT]) -> Option<usize>
+{
+   Some(arr.iter().enumerate().max_by(|(_,i), (_,j)| i.total_cmp(j))?.0)
+}
 
 /**
  * Runs training on a neural network with the specified `dataset`.
@@ -42,22 +51,34 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
    let mut iteration = 0;
 
    let start = std::time::Instant::now();
+   let mut rng = thread_rng();
    while iteration < network.max_iterations && loss >= network.error_cutoff
    {
       loss = 0.0;
+      network.learn_rate *= network.learn_decay;
 
+      let mut correct = 0;
       for case in dataset
       {
          network.get_inputs().copy_from_slice(&case.inputs);
+         network.add_noise(&mut rng);
          network.feed_forward::<true>();
          loss += network.feed_backward(&case.expected_outputs);
+
+         let (a, b) = (max_idx(network.get_outputs()).unwrap(),
+                       max_idx(&case.expected_outputs).unwrap());
+         if a == b
+         {
+            correct += 1
+         }
       }
 
       loss /= dataset.len() as NumT;
       if iteration % network.printout_period == 0
       {
-         println!("loss={:.6}\tλ={:.6}\tit={}",
-                  loss, network.learn_rate, iteration);
+         println!("loss={:.6}\tacc={:.2}\tλ={:.6}\tit={}",
+                  loss, 100.0 * correct as NumT / dataset.len() as NumT,
+                  network.learn_rate, iteration);
       }
 
       iteration += 1;
@@ -94,6 +115,7 @@ fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
 {
    println!("\nTruth table");
    let mut loss = 0.0;
+   let mut correct = 0;
 
    let start = std::time::Instant::now();
    for case in dataset
@@ -102,10 +124,16 @@ fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
       network.feed_forward::<false>();
       loss += network.calculate_error(&case.expected_outputs);
 
-      println!("network {:.2?} = {:?} (expected {:.2?})",
-               case.inputs,
+      println!("network = {:?} (expected {:.2?})",
                network.get_outputs(),
                case.expected_outputs);
+
+      let (a, b) = (max_idx(network.get_outputs()).unwrap(),
+                    max_idx(&case.expected_outputs).unwrap());
+      if a == b
+      {
+         correct += 1
+      }
    } // for case in dataset
 
    let diff = start.elapsed();
@@ -113,7 +141,8 @@ fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
    println!("Ran epoch in {:.4}ms ({:.4}ms per case)", ms, ms / dataset.len() as NumT);
 
    loss /= dataset.len() as NumT;
-   println!("final loss: {}\n", loss);
+   println!("final loss: {}\tfinal accuracy: {}\n", loss,
+            100.0 * correct as NumT / dataset.len() as NumT);
 } // fn print_truth_table(network: &mut Network, dataset: &Vec<Datapoint>)
 
 /**
@@ -137,7 +166,20 @@ fn main() -> Result<(), Box<dyn Error>>
 
    // this dataset is actually used both as the test set and the training set.
    let mut dataset = Vec::new();
-   load_dataset_from_config_txt(&network, &config, &mut dataset)?;
+   load_dataset_from_config_txt(&mut network, &config, &mut dataset)?;
+
+   // expect_config!(Some(Numeric(smooth)), config.get("label_smooth"),
+   // {
+   //    // let base = smooth / (network.layers.last().unwrap().num_outputs - 1) as NumT;
+   //    // let add = (1.0 - smooth) - base;
+   //    for case in dataset.iter_mut()
+   //    {
+   //       for out in case.expected_outputs.iter_mut()
+   //       {
+   //          *out *= smooth;
+   //       }
+   //    }
+   // });
 
    if network.do_training
    {

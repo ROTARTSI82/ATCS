@@ -1,39 +1,28 @@
 do_training: true
-max_iterations: int 100000
-error_cutoff: float 2e-4
-learn_rate: float 0.3
+max_iterations: int 1000
+error_cutoff: float 8e-4
+learn_rate: float 0.1
+learn_decay: float 1
 print_weights: false
 
 # how often to print out training loss (in # of iterations)
-printout_period: int 16000
+printout_period: int 8
+gain: float 1.8463
 
-network_topology: int[2,5,10,20,40,80,160,320,3]
+network_topology: int[16384,16,16,5]
+
+add_noise: float 0.2
+input_dropout: float 0.5
 
 # "sigmoid", "tanh", or "leaky_relu"
 activation_function: "sigmoid"
 
 # "randomize", "from_file", or "fixed_value" (fixed_value is not implemented yet)
-initialization_mode: "randomize"
-rand_lo: float -1.5
-rand_hi: float 1.5
+initialization_mode: "smart_random"
 
 # load_file is not used with initialization_mode="randomize"
-load_file: "xor_sigmoid.txt"
-save_file: "xor_sigmoid.txt"
+load_file: "network.net"
+save_file: "network.net"
 
-# In the future, I will implement loading training data from a binary file or directory.
-# training_cases_mode: "truth_table"
-case [0,0]: float[0,0,0]
-case [0,1]: float[0,1,1]
-case [1,0]: float[0,1,1]
-case [1,1]: float[1,1,0]
-
-
-# expected results for configs
-# 2-5-3    ~40-60k its
-# 2-20-3   ~20k its
-# 2-100-3  1,1,1,---   0.75 err
-# 2-2-3    0.719
-# 2-1-3    0.3,0.8,0.5
-# A>2
-# 2-10-3   train/save then load weights
+dataset_mode: "from_file"
+dataset_file: "dataset/train.data"
