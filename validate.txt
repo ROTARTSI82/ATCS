@@ -1,28 +1,27 @@
-do_training: true
-max_iterations: int 1024
-error_cutoff: float 8e-4
-learn_rate: float 0.1
+do_training: false
+max_iterations: int 256
+error_cutoff: float 6e-4
+learn_rate: float 3e-3
 learn_decay: float 1
 print_weights: false
 
 # how often to print out training loss (in # of iterations)
-printout_period: int 8
-gain: float 2.1
+printout_period: int 1
 
 network_topology: int[16384,24,24,5]
 
-add_noise: float 0.17
-input_dropout: float 0.6
+add_noise: float 0.0
+input_dropout: float 0.0
 
 # "sigmoid", "tanh", or "leaky_relu"
 activation_function: "sigmoid"
 
 # "randomize", "from_file", or "fixed_value" (fixed_value is not implemented yet)
-initialization_mode: "smart_random"
+initialization_mode: "from_file"
 
 # load_file is not used with initialization_mode="randomize"
 load_file: "network2.net"
 save_file: "network2.net"
 
 dataset_mode: "from_file"
-dataset_file: "dataset/train.data"
+dataset_file: "dataset/validate.data"

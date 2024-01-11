@@ -29,7 +29,7 @@ def dump(file, prefix):
         img = img + 0.18 * np.random.randn(128, 128)
         for x in range(128):
             for y in range(128):
-                if random.random() < 0.33:
+                if random.random() < 0.6:
                     img[x, y] = 0
         np.clip(img, 0.0, 1.0, img)
 

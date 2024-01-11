@@ -22,7 +22,7 @@ mod serialize;
 
 extern crate core;
 
-use crate::config::ConfigValue::{Text, Numeric};
+use crate::config::ConfigValue::Text;
 use crate::config::*;
 use crate::network::{Datapoint, NeuralNetwork};
 use crate::serialize::write_net_to_file;

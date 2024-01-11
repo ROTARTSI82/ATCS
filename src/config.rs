@@ -71,13 +71,18 @@ pub enum ConfigValue
  * These are the parameters of the configuration that are printed out
  * before running the network.
  */
-const PARAMS_TO_PRINT: [&str; 7] = ["rand_lo",
+const PARAMS_TO_PRINT: [&str; 11] = ["rand_lo",
    "rand_hi",
    "network_topology",
    "max_iterations",
    "learn_rate",
    "error_cutoff",
-   "activation_function"];
+   "activation_function",
+   "gain",
+   "initialization_mode",
+   "add_noise",
+   "input_dropout"
+];
 
 /**
  * This macro attempts to unwrap a certain value (specified by the expression `str_name`)
