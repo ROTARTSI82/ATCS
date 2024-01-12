@@ -1,6 +1,3 @@
-use rand::{Rng, thread_rng};
-use rand::rngs::ThreadRng;
-use rand_distr::StandardNormal;
 /**
  * network.rs
  * By Grant Yang
@@ -30,6 +27,9 @@ use rand_distr::StandardNormal;
  *    `pub fn feed_backward(&mut self, target_out: &[NumT]) -> NumT`
  */
 use crate::config::{ident, ident_deriv, FuncT, NumT};
+use rand::rngs::ThreadRng;
+use rand::{thread_rng, Rng};
+use rand_distr::StandardNormal;
 
 /**
  * These are array indices into `NeuralNetwork::activations`,
@@ -145,15 +145,12 @@ impl NetworkLayer
    pub fn new(num_inputs: i32, num_outputs: i32) -> NetworkLayer
    {
       let vec = vec![0.0; (num_inputs * num_outputs) as usize];
-      NetworkLayer
-      {
-         num_inputs,
-         num_outputs,
-         weights: vec.clone().into_boxed_slice(),
-         momentum: vec.clone().into_boxed_slice(),
-         delta_weights: vec.clone().into_boxed_slice(),
-         velocity: vec.into_boxed_slice()
-      }
+      NetworkLayer { num_inputs,
+                     num_outputs,
+                     weights: vec.clone().into_boxed_slice(),
+                     momentum: vec.clone().into_boxed_slice(),
+                     delta_weights: vec.clone().into_boxed_slice(),
+                     velocity: vec.into_boxed_slice() }
       // NetworkLayer
    } // fn new(num_inputs: i32, num_outputs: i32, do_training: bool) -> NetworkLayer
 
@@ -187,9 +184,11 @@ impl NetworkLayer
 
       for out_it in 0..self.num_outputs as usize
       {
-         let theta = (0..self.num_inputs as usize)
-            .map(|in_it| self.weights[self.coord_to_idx(in_it, out_it)] * inp_act_arr[in_it])
-            .sum::<NumT>();
+         let theta = (0..self.num_inputs as usize).map(|in_it| {
+                                                     self.weights[self.coord_to_idx(in_it, out_it)]
+                                                     * inp_act_arr[in_it]
+                                                  })
+                                                  .sum::<NumT>();
 
          dest_h_out_arr[out_it] = if activ { threshold_func(theta) } else { theta };
       } // for out_it in 0..self.num_outputs as usize
@@ -222,10 +221,8 @@ impl NetworkLayer
     * becomes the new `prev_omegas` of the previous layer.
     */
    pub fn feed_backward(&mut self, inp_acts_arr: &[NumT], out_acts_arr: &[NumT],
-                        params: &TrainParams,
-                        dropped_outputs: &[bool],
-                        prev_omegas: &[NumT], dest_next_omegas: &mut [NumT],
-                        step: i32, activ: bool)
+                        params: &TrainParams, dropped_outputs: &[bool], prev_omegas: &[NumT],
+                        dest_next_omegas: &mut [NumT], step: i32, activ: bool)
    {
       debug_assert_eq!(inp_acts_arr.len(), self.num_inputs as usize);
       debug_assert_eq!(prev_omegas.len(), self.num_outputs as usize);
@@ -235,42 +232,48 @@ impl NetworkLayer
 
       for (in_it, dest_wrt_inp) in dest_next_omegas.iter_mut().enumerate()
       {
-         *dest_wrt_inp = (0..self.num_outputs as usize).map(|out_it|
-         {
-            let psi = if dropped_outputs[out_it]
-            {
-               0.0
-            }
-            else
-            {
-               prev_omegas[out_it] * if activ {
-                  (params.threshold_func_deriv)(out_acts_arr[out_it])
-               } else {
-                  1.0
-               }
-            };
+         *dest_wrt_inp = (0..self.num_outputs as usize).map(|out_it| {
+                            let psi = if dropped_outputs[out_it]
+                            {
+                               0.0
+                            }
+                            else
+                            {
+                               prev_omegas[out_it]
+                               * if activ
+                               {
+                                  (params.threshold_func_deriv)(out_acts_arr[out_it])
+                               }
+                               else
+                               {
+                                  1.0
+                               }
+                            };
 
-            debug_assert!(psi.is_finite() && !psi.is_nan());
+                            debug_assert!(psi.is_finite() && !psi.is_nan());
 
-            let idx = self.coord_to_idx(in_it, out_it);
-            let g = inp_acts_arr[in_it] * psi + params.weight_decay * self.weights[idx];
+                            let idx = self.coord_to_idx(in_it, out_it);
+                            let g =
+                               inp_acts_arr[in_it] * psi + params.weight_decay * self.weights[idx];
 
-            self.momentum[idx] *= params.beta1;
-            self.momentum[idx] += (1.0 - params.beta1) * g;
+                            self.momentum[idx] *= params.beta1;
+                            self.momentum[idx] += (1.0 - params.beta1) * g;
 
-            self.velocity[idx] *= params.beta2;
-            self.velocity[idx] += (1.0 - params.beta2) * g * g;
+                            self.velocity[idx] *= params.beta2;
+                            self.velocity[idx] += (1.0 - params.beta2) * g * g;
 
-            // sqrt(1 - B2^t) / (1 - B1^t) can cause a div by zero error if t is small
-            // so make sure that step > 0
-            let a = params.learn_rate * (1.0 - params.beta2.powi(step)).sqrt()
-               / (1.0 - params.beta1.powi(step));
+                            // sqrt(1 - B2^t) / (1 - B1^t) can cause a div by zero error if t is small
+                            // so make sure that step > 0
+                            let a = params.learn_rate * (1.0 - params.beta2.powi(step)).sqrt()
+                                    / (1.0 - params.beta1.powi(step));
 
-            self.delta_weights[idx] += -a * self.momentum[idx] / (self.velocity[idx].sqrt() + params.eps)
-                                       - params.weight_decay * self.weights[idx];
+                            self.delta_weights[idx] += -a * self.momentum[idx]
+                                                       / (self.velocity[idx].sqrt() + params.eps)
+                                                       - params.weight_decay * self.weights[idx];
 
-            psi * self.weights[idx]
-         }).sum(); // (0..self.num_inputs as usize).map(...).sum()
+                            psi * self.weights[idx]
+                         })
+                         .sum(); // (0..self.num_inputs as usize).map(...).sum()
       } // for (in_it, dest_wrt_inp) in dest_next_omegas.iter_mut().enumerate()
    } // pub fn feed_backward(...)
 
@@ -294,37 +297,32 @@ impl NeuralNetwork
     */
    pub fn new() -> NeuralNetwork
    {
-      NeuralNetwork
-      {
-         layers: Box::new([]),
-         activations: Box::new([]),
-         omegas: [Box::new([]), Box::new([])],
-         max_iterations: 0,
-         error_cutoff: 0.0,
-         do_training: false,
-         printout_period: 0,
-         checkpoint_period: 0,
-         batch_size: 0,
-         dropouts: Box::new([]),
-         train_params: TrainParams {
-            threshold_func: ident,
-            threshold_func_deriv: ident_deriv,
-            learn_rate: 1.0,
-            dropout_prob: 0.0,
-            beta2: 0.0,
-            beta1: 0.0,
-            eps: 0.0,
-            weight_decay: 0.0
-         },
-      } // NeuralNetwork
+      NeuralNetwork { layers: Box::new([]),
+                      activations: Box::new([]),
+                      omegas: [Box::new([]), Box::new([])],
+                      max_iterations: 0,
+                      error_cutoff: 0.0,
+                      do_training: false,
+                      printout_period: 0,
+                      checkpoint_period: 0,
+                      batch_size: 0,
+                      dropouts: Box::new([]),
+                      train_params: TrainParams { threshold_func: ident,
+                                                  threshold_func_deriv: ident_deriv,
+                                                  learn_rate: 1.0,
+                                                  dropout_prob: 0.0,
+                                                  beta2: 0.0,
+                                                  beta1: 0.0,
+                                                  eps: 0.0,
+                                                  weight_decay: 0.0 } } // NeuralNetwork
    } // pub fn new() -> NeuralNetwork
 
    pub fn add_noise(&mut self, rng: &mut ThreadRng)
    {
       for inp in self.get_inputs().iter_mut()
       {
-         *inp += 0.2 * rng.sample::<f32,_>(StandardNormal);
-         if rng.gen_bool(0.1)
+         *inp += 0.17 * rng.sample::<f32, _>(StandardNormal);
+         if rng.gen_bool(0.6)
          {
             *inp = 0.0;
          }
@@ -367,8 +365,10 @@ impl NeuralNetwork
 
          let input_arr = &input_slice[index];
          let dest_output_arr = &mut output_slice[0];
-         layer.feed_forward(input_arr, dest_output_arr,
-                            self.train_params.threshold_func, index != layer_len - 1);
+         layer.feed_forward(input_arr,
+                            dest_output_arr,
+                            self.train_params.threshold_func,
+                            index != layer_len - 1);
 
          if index < layer_len - 1
          {
@@ -445,7 +445,8 @@ impl NeuralNetwork
                              &self.dropouts[index + 1],
                              &inp_deriv_slice[0][..layer.num_outputs as usize],
                              &mut outp_deriv_slice[0][..layer.num_inputs as usize],
-                             step, index != sz);
+                             step,
+                             index != sz);
 
          /*
           * the derivatives outputted by this layer become the derivatives

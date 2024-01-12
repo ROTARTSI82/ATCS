@@ -22,20 +22,24 @@ mod serialize;
 
 extern crate core;
 
-use crate::config::ConfigValue::Text;
+use crate::config::ConfigValue::{Numeric, Text};
 use crate::config::*;
 use crate::network::{Datapoint, NeuralNetwork};
 use crate::serialize::write_net_to_file;
-use std::error::Error;
 use rand::prelude::IteratorRandom;
-
+use std::error::Error;
+use std::fs::File;
+use std::io::Write;
 
 /**
  * Get index of maximal element
  */
 fn max_idx(arr: &[NumT]) -> Option<usize>
 {
-   Some(arr.iter().enumerate().max_by(|(_,i), (_,j)| i.total_cmp(j))?.0)
+   Some(arr.iter()
+           .enumerate()
+           .max_by(|(_, i), (_, j)| i.total_cmp(j))?
+           .0)
 }
 
 /**
@@ -51,6 +55,7 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
    let mut rng = rand::thread_rng();
    let mut loss = network.error_cutoff;
    let mut iteration = 0;
+   let mut loss_log = Vec::new();
 
    let start = std::time::Instant::now();
    while iteration < network.max_iterations && loss >= network.error_cutoff
@@ -58,7 +63,8 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
       loss = 0.0;
 
       let mut correct = 0;
-      for case in dataset.iter().choose_multiple(&mut rng, network.batch_size as usize)
+      for case in dataset.iter()
+                         .choose_multiple(&mut rng, network.batch_size as usize)
       {
          network.randomize_dropouts();
          network.get_inputs().copy_from_slice(&case.inputs);
@@ -66,8 +72,8 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
          network.feed_forward();
          loss += network.feed_backward(&case.expected_outputs, iteration + 1);
 
-         let (a, b) = (max_idx(network.get_outputs()).unwrap(),
-                       max_idx(&case.expected_outputs).unwrap());
+         let (a, b) =
+            (max_idx(network.get_outputs()).unwrap(), max_idx(&case.expected_outputs).unwrap());
          //println!("{:#?} vs. {:#?} {a} {b}", network.get_outputs(), &case.expected_outputs);
          if a == b
          {
@@ -78,11 +84,14 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
       network.apply_deltas();
 
       loss /= network.batch_size as NumT;
+      loss_log.push(loss);
       if iteration % network.printout_period == 0
       {
          println!("loss={:.6}\tacc={:.2}\tλ={:.6}\tit={}",
-                  loss, 100.0 * correct as NumT / network.batch_size as NumT,
-                  network.train_params.learn_rate, iteration);
+                  loss,
+                  100.0 * correct as NumT / network.batch_size as NumT,
+                  network.train_params.learn_rate,
+                  iteration);
       }
 
       iteration += 1;
@@ -93,6 +102,13 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
             iteration, network.max_iterations);
 
    println!("loss={:.6}, threshold={:.6}", loss, network.error_cutoff);
+   let mut file = File::create("loss.csv").unwrap();
+   file.write_all(&loss_log.into_iter()
+                           .map(|x| (x.to_string() + ",").into_bytes())
+                           .flatten()
+                           .collect::<Vec<_>>()
+                           .into_boxed_slice())
+       .unwrap();
 
    if loss < network.error_cutoff
    {
@@ -134,8 +150,8 @@ fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
                network.get_outputs(),
                case.expected_outputs);
 
-      let (a, b) = (max_idx(network.get_outputs()).unwrap(),
-                    max_idx(&case.expected_outputs).unwrap());
+      let (a, b) =
+         (max_idx(network.get_outputs()).unwrap(), max_idx(&case.expected_outputs).unwrap());
       if a == b
       {
          correct += 1
@@ -149,7 +165,8 @@ fn print_truth_table(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
             ms / dataset.len() as NumT);
 
    loss /= dataset.len() as NumT;
-   println!("final loss: {}\tfinal accuracy: {}\n", loss,
+   println!("final loss: {}\tfinal accuracy: {}\n",
+            loss,
             100.0 * correct as NumT / dataset.len() as NumT);
 } // fn print_truth_table(network: &mut Network, dataset: &Vec<Datapoint>)
 
@@ -175,6 +192,18 @@ fn main() -> Result<(), Box<dyn Error>>
    // this dataset is actually used both as the test set and the training set.
    let mut dataset = Vec::new();
    load_dataset_from_config_txt(&mut network, &config, &mut dataset)?;
+
+   expect_config!((Some(Numeric(label0)), Some(Numeric(label1))),
+                  (config.get("label0"), config.get("label1")),
+                  {
+                     for case in dataset.iter_mut()
+                     {
+                        for value in case.expected_outputs.iter_mut()
+                        {
+                           *value = label0 + (label1 - label0) * *value;
+                        }
+                     }
+                  });
 
    if network.do_training
    {

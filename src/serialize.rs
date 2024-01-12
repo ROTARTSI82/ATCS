@@ -171,8 +171,8 @@ pub fn read_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(),
    Ok(())
 } // pub fn load_net_from_file(net: &mut NeuralNetwork, filename: &str) -> Result<(), io::Error>
 
-pub fn load_dataset_from_file(db: &mut Vec<Datapoint>, filename: &str,
-                              expected_io: (usize, usize)) -> Result<(), std::io::Error>
+pub fn load_dataset_from_file(db: &mut Vec<Datapoint>, filename: &str, expected_io: (usize, usize))
+                              -> Result<(), std::io::Error>
 {
    let mut bytes = Vec::new();
    {
@@ -197,21 +197,24 @@ pub fn load_dataset_from_file(db: &mut Vec<Datapoint>, filename: &str,
 
    let bytes = &bytes[3 * I32_SIZE..];
    let mut new = (0..num_cases).map(|c| -> Result<Datapoint, std::io::Error> {
-      let bytes = &bytes[c * (input_dims + output_dims) * I32_SIZE..];
-      let inps = (0..input_dims).map(|i| -> Result<NumT, _> {
-         consume_num(&bytes[i * I32_SIZE..])
-      }).collect::<Result<Vec<_>, _>>()?.into_boxed_slice();
+                                  let bytes = &bytes[c * (input_dims + output_dims) * I32_SIZE..];
+                                  let inps = (0..input_dims).map(|i| -> Result<NumT, _> {
+                                                               consume_num(&bytes[i * I32_SIZE..])
+                                                            })
+                                                            .collect::<Result<Vec<_>, _>>()?
+                                                            .into_boxed_slice();
 
-      let bytes = &bytes[input_dims * I32_SIZE..];
-      let outs = (0..output_dims).map(|i| -> Result<NumT, _> {
-         consume_num(&bytes[i * I32_SIZE..])
-      }).collect::<Result<Vec<_>, _>>()?.into_boxed_slice();
+                                  let bytes = &bytes[input_dims * I32_SIZE..];
+                                  let outs = (0..output_dims).map(|i| -> Result<NumT, _> {
+                                                                consume_num(&bytes[i * I32_SIZE..])
+                                                             })
+                                                             .collect::<Result<Vec<_>, _>>()?
+                                                             .into_boxed_slice();
 
-      Ok(Datapoint {
-         inputs: inps,
-         expected_outputs: outs,
-      })
-   }).collect::<Result<Vec<Datapoint>, _>>()?;
+                                  Ok(Datapoint { inputs: inps,
+                                                 expected_outputs: outs })
+                               })
+                               .collect::<Result<Vec<Datapoint>, _>>()?;
    db.append(&mut new);
 
    println!("Loaded {num_cases} datapoints from {filename}");

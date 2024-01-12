@@ -2,7 +2,7 @@ import struct
 import cv2
 import numpy as np
 
-with open('min.net', 'rb') as fp:
+with open('softmax-1L.net', 'rb') as fp:
     data = fp.read()
 
 assert data[:15] == b"ATNeuralNetwork"

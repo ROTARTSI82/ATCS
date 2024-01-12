@@ -39,11 +39,11 @@ use crate::network::{Datapoint, NetworkLayer, NeuralNetwork};
 use crate::serialize::{load_dataset_from_file, read_net_from_file};
 
 use rand::prelude::*;
+use rand_distr::StandardNormal;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Read;
 use std::ops::Range;
-use rand_distr::StandardNormal;
 
 /**
  * The type of the values contained in the network
@@ -78,7 +78,8 @@ const PARAMS_TO_PRINT: [&str; 9] = ["rand_lo",
                                     "learn_rate",
                                     "error_cutoff",
                                     "activation_function",
-                                    "dropout", "weight_decay"];
+                                    "dropout",
+                                    "weight_decay"];
 
 /**
  * This macro attempts to unwrap a certain value (specified by the expression `str_name`)
@@ -158,28 +159,34 @@ pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, Co
                   net.do_training = *train);
 
    expect_config!(Some(IntList(list)), config.get("network_topology"), {
-      net.layers =
-         (0..list.len() - 1).map(|it| NetworkLayer::new(list[it], list[it + 1]))
-                            .collect();
+      net.layers = (0..list.len() - 1).map(|it| NetworkLayer::new(list[it], list[it + 1]))
+                                      .collect();
       net.activations = list.iter()
                             .map(|it| vec![0.0; *it as usize].into_boxed_slice())
                             .collect();
-      net.dropouts = list.iter().map(|it| vec![false; *it as usize].into_boxed_slice()).collect();
+      net.dropouts = list.iter()
+                         .map(|it| vec![false; *it as usize].into_boxed_slice())
+                         .collect();
 
       let max_width = *list.iter().max().ok_or(make_err("net topology empty"))? as usize;
       let mk_vec = || vec![0.0; max_width].into_boxed_slice();
       net.omegas = [mk_vec(), mk_vec()];
    }); // expect_config! Some(IntList(list)), config.get("network_topology")
 
-   expect_config!(Some(Numeric(drop)), config.get("dropout"), net.train_params.dropout_prob = *drop);
+   expect_config!(Some(Numeric(drop)),
+                  config.get("dropout"),
+                  net.train_params.dropout_prob = *drop);
    expect_config!(Some(FloatList(betas)), config.get("betas"), {
       net.train_params.beta1 = *betas.first().ok_or(make_err("need beta 1"))?;
       net.train_params.beta2 = *betas.get(1).ok_or(make_err("need beta 2"))?;
    });
 
-   expect_config!(Some(Numeric(eps)), config.get("epsilon"), net.train_params.eps = *eps);
-   expect_config!(Some(Numeric(decay)), config.get("weight_decay"), net.train_params.weight_decay = *decay);
-
+   expect_config!(Some(Numeric(eps)),
+                  config.get("epsilon"),
+                  net.train_params.eps = *eps);
+   expect_config!(Some(Numeric(decay)),
+                  config.get("weight_decay"),
+                  net.train_params.weight_decay = *decay);
 
    expect_config!(Some(Text(func)), config.get("activation_function"), {
       (net.train_params.threshold_func, net.train_params.threshold_func_deriv) = match func.as_str()
@@ -224,7 +231,7 @@ pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, Co
    } // if net.do_training
 
    let filtered = config.iter()
-         .filter(|(key, _)| PARAMS_TO_PRINT.contains(&key.as_str()));
+                        .filter(|(key, _)| PARAMS_TO_PRINT.contains(&key.as_str()));
    for (key, value) in filtered
    {
       println!("\t{}: {:?}", key, value);
@@ -245,7 +252,8 @@ pub fn set_and_echo_config(net: &mut NeuralNetwork, config: &BTreeMap<String, Co
  * as a `FloatList`. The array in the `case [..]` key are parsed in the same way with
  * rust parsing, so e-notation is supported in all cases.
  */
-pub fn load_dataset_from_config_txt(net: &mut NeuralNetwork, config: &BTreeMap<String, ConfigValue>,
+pub fn load_dataset_from_config_txt(net: &mut NeuralNetwork,
+                                    config: &BTreeMap<String, ConfigValue>,
                                     dataset_out: &mut Vec<Datapoint>)
                                     -> Result<(), std::io::Error>
 {
@@ -263,7 +271,8 @@ pub fn load_dataset_from_config_txt(net: &mut NeuralNetwork, config: &BTreeMap<S
             }
             return Ok(());
          });
-      } else if mode != "truth_table"
+      }
+      else if mode != "truth_table"
       {
          Err(make_err("unrecognized `dataset_mode` config value"))?;
       }
@@ -283,8 +292,7 @@ pub fn load_dataset_from_config_txt(net: &mut NeuralNetwork, config: &BTreeMap<S
                       .collect::<Result<Vec<_>, _>>()
                       .map_err(|_| err_msg())?;
 
-         if vec.len() != expected.0
-            || outp.len() != expected.1
+         if vec.len() != expected.0 || outp.len() != expected.1
          {
             Err(make_err("case size does not match configured input/output size"))?;
          }
@@ -331,11 +339,11 @@ fn set_initialization_mode(net: &mut NeuralNetwork, init_mode: &str,
          expect_config!((Some(Numeric(hi)), Some(Numeric(lo))),
                         (config.get("rand_hi"), config.get("rand_lo")),
                         randomize_network(net, *lo..*hi));
-      },
+      }
       "smart_random" =>
       {
          smart_random(net);
-      },
+      }
       "fixed_value" => todo!("not implemented"),
       "from_file" =>
       {
@@ -390,7 +398,7 @@ fn smart_random(net: &mut NeuralNetwork)
 
       for weight in layer.weights.iter_mut()
       {
-         *weight = gain * rng.sample::<NumT,_>(StandardNormal) / layer.num_inputs as NumT;
+         *weight = gain * rng.sample::<NumT, _>(StandardNormal) / layer.num_inputs as NumT;
       }
    }
 }
@@ -542,5 +550,5 @@ fn tanh(x: NumT) -> NumT
 
 fn tanh_deriv(x: NumT) -> NumT
 {
-   1.0 - x*x
+   1.0 - x * x
 }
