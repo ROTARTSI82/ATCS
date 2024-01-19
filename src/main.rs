@@ -28,6 +28,8 @@ use crate::network::{Datapoint, NeuralNetwork};
 use crate::serialize::write_net_to_file;
 use std::error::Error;
 use rand::thread_rng;
+use std::fs::File;
+use std::io::Write;
 
 /**
  * Get index of maximal element
@@ -52,6 +54,7 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
 
    let start = std::time::Instant::now();
    let mut rng = thread_rng();
+   let mut loss_log = Vec::new();
    while iteration < network.max_iterations && loss >= network.error_cutoff
    {
       loss = 0.0;
@@ -74,6 +77,7 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
       }
 
       loss /= dataset.len() as NumT;
+      loss_log.push(loss);
       if iteration % network.printout_period == 0
       {
          println!("loss={:.6}\tacc={:.2}\tλ={:.6}\tit={}",
@@ -89,6 +93,13 @@ fn train_network(network: &mut NeuralNetwork, dataset: &Vec<Datapoint>)
             iteration, network.max_iterations);
 
    println!("loss={:.6}, threshold={:.6}", loss, network.error_cutoff);
+   let mut file = File::create("loss.csv").unwrap();
+   file.write_all(&loss_log.into_iter()
+      .map(|x| (x.to_string() + ",").into_bytes())
+      .flatten()
+      .collect::<Vec<_>>()
+      .into_boxed_slice())
+      .unwrap();
 
    if loss < network.error_cutoff
    {
