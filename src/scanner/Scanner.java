@@ -1,7 +1,7 @@
 package scanner;
 
 import java.io.*;
-import java.util.Arrays;
+import java.util.*;
 
 /**
  * Scanner is a simple scanner for Compilers and Interpreters (2014-2015) lab exercise 1
@@ -140,27 +140,33 @@ public class Scanner
 
         String op = scanOperator();
         // todo: rewrite this into scanOperator properly
-        if (op.equals("/") && currentChar == '/')
+        if (op.equals("//"))
         {
             while (currentChar != '\n')
                 eat(currentChar);
             return nextToken();
         }
-        if (op.equals("/") && currentChar == '*')
+
+        if (op.equals("/*"))
         {
-            do
+            int pending = 1;
+            while (pending > 0)
             {
                 while (currentChar != '/' && currentChar != '*')
                     eat(currentChar);
-            } while (!nextToken().equals("*/"));
+                String op2 = scanOperator();
+                if (op2.equals("*/"))
+                    pending--;
+                else if (op2.equals("/*"))
+                    pending++;
+            }
 
             return nextToken();
         }
-        if (op.equals("*") && currentChar == '/')
-        {
-            eat('/');
-            return "*/";
-        }
+        if (op.equals("*/"))
+            throw new ScanErrorException("line %d:%d unbalanced closing comment '*/'"
+                    .formatted(lineNo, colNo));
+
         return op;
     }
 
@@ -196,13 +202,23 @@ public class Scanner
 
     private String scanOperator() throws ScanErrorException
     {
-        String ret = "%c".formatted(currentChar);
-        if ("=+-*/()<>:%.".indexOf(currentChar) == -1)
+        Set<String> operators = Set.of(
+                "+", "-", "*", "/*", "*/", "/", "//", "(", ")",
+                ":", ":=", "<=", ">=", "<", ">", "."
+        );
+
+        String ret = "";
+        while (true)
         {
-            compileThrow("'%c' is not a valid operator");
+            ret += currentChar;
+            if (!operators.contains(ret))
+                break;
+            eat(currentChar);
         }
 
-        eat(currentChar);
-        return ret;
+        if (ret.length() == 1)
+            compileThrow("'%c' is not a valid operator");
+
+        return ret.substring(0, ret.length() - 1);
     }
 }
