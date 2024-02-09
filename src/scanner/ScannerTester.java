@@ -1,7 +1,6 @@
 package scanner;
 
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
+import java.io.*;
 
 /**
  * ScannerTester.java
@@ -17,15 +16,15 @@ public class ScannerTester
      * @param args Command-line arguments
      * @throws FileNotFoundException If either of the two test cases cannot be read
      */
-    public static void main(String[] args) throws FileNotFoundException
-    {
-        Scanner scan = new Scanner(new FileInputStream("scanner/scannerTestAdvanced.txt"));
-        while (scan.hasNext())
-            System.out.println(scan.nextToken());
+    public static void main(String[] args) throws IOException {
+//        Scanner scan = new Scanner(new FileInputStream("scanner/scannerTestAdvanced.txt"));
+//        while (scan.hasNext())
+//            System.out.println(scan.nextToken());
 
         System.out.println("=======================================");
-        Scanner scan2 = new Scanner(new FileInputStream("scanner/ScannerTest.txt"));
-        while (scan2.hasNext())
+//        Scanner scan2 = new Scanner(new FileInputStream("scanner/ScannerTest.txt"));
+        Scanner scan2 = new Scanner(new FileReader("jflex/out.json"));
+        while (!scan2.yyatEOF())
             System.out.println(scan2.nextToken());
     }
 }

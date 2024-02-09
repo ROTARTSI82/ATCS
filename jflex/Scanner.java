@@ -335,7 +335,7 @@ public class Scanner {
   }
 
   /** Input device. */
-  private Reader zzReader;
+  private java.io.Reader zzReader;
 
   /** Current state of the DFA. */
   private int zzState;
@@ -400,7 +400,7 @@ public class Scanner {
    *
    * @param   in  the java.io.Reader to read input from.
    */
-  public Scanner(Reader in) {
+  public Scanner(java.io.Reader in) {
     this.zzReader = in;
   }
 
@@ -427,9 +427,9 @@ public class Scanner {
    * Refills the input buffer.
    *
    * @return {@code false} iff there was new input.
-   * @exception IOException  if any I/O-Error occurs
+   * @exception java.io.IOException  if any I/O-Error occurs
    */
-  private boolean zzRefill() throws IOException {
+  private boolean zzRefill() throws java.io.IOException {
 
     /* first: make room (if you can) */
     if (zzStartRead > 0) {
@@ -463,10 +463,10 @@ public class Scanner {
     /* not supposed to occur according to specification of java.io.Reader */
     if (numRead == 0) {
       if (requested == 0) {
-        throw new EOFException("Scan buffer limit reached ["+zzBuffer.length+"]");
+        throw new java.io.EOFException("Scan buffer limit reached ["+zzBuffer.length+"]");
       }
       else {
-        throw new IOException(
+        throw new java.io.IOException(
             "Reader returned 0 characters. See JFlex examples/zero-reader for a workaround.");
       }
     }
@@ -497,9 +497,9 @@ public class Scanner {
   /**
    * Closes the input reader.
    *
-   * @throws IOException if the reader could not be closed.
+   * @throws java.io.IOException if the reader could not be closed.
    */
-  public final void yyclose() throws IOException {
+  public final void yyclose() throws java.io.IOException {
     zzAtEOF = true; // indicate end of file
     zzEndRead = zzStartRead; // invalidate buffer
 
@@ -521,7 +521,7 @@ public class Scanner {
    *
    * @param reader The new input stream.
    */
-  public final void yyreset(Reader reader) {
+  public final void yyreset(java.io.Reader reader) {
     zzReader = reader;
     zzEOFDone = false;
     yyResetPosition();
@@ -662,9 +662,9 @@ public class Scanner {
    * or an I/O-Error occurs.
    *
    * @return the next token.
-   * @exception IOException if any I/O-Error occurs.
+   * @exception java.io.IOException if any I/O-Error occurs.
    */
-  public String nextToken() throws IOException
+  public String nextToken() throws java.io.IOException
   {
     int zzInput;
     int zzAction;

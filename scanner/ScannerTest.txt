@@ -2,7 +2,7 @@ x = x + 3 / 5 - y
 y = z % 5                       
     z =    x   + y
 xyzzy          =           303    
-  $^)(@ 
+//  $^)(@
 byte
   baudy
     bit

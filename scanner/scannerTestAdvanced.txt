@@ -11,14 +11,17 @@ WRITELN(square(x));
 x := x + 1;
 END;
 END;
-.
+
 
 
 /*
 asdf
-/* it's a /**/ me */
+/* it's a /**/ m.e */
 
 dafa */
 
-Hi // i wrote
+Hi // i w.rote
 something
+
+.
+not after
