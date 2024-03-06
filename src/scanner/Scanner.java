@@ -39,7 +39,8 @@ public class Scanner
 
         operators = Set.of(
                 "+", "-", "*", "/*", "*/", "/", "//", "(", ")",
-                ":", ":=", "<=", ">=", "<", ">", ".", "=", "%", ";", "<>"
+                ":", ":=", "<=", ">=", "<", ">", ".", "=", "%", ";", "<>", "\"", "'", ",", "[", "]",
+                ".."
         );
         partialOperators = Set.of(":");
         keywords = Set.of("BEGIN", "END", "VAR", "WHILE", "RETURN", "PROCEDURE", "DO", "WRITELN");
@@ -217,9 +218,8 @@ public class Scanner
             while (isWhitespace(currentChar) && !eof)
                 eat(currentChar);
 
-            eof = eof || currentChar == '.';
             if (eof)
-                return newToken(Token.Type.EOF, "EOF");
+                return newToken(Token.Type.EOF, "true EOF");
 
             if (isLetter(currentChar))
                 return scanIdentifier();
@@ -261,6 +261,9 @@ public class Scanner
      */
     private Token skipComments(Token op) throws ScanErrorException
     {
+        if (op.content().equals("."))
+            return newToken(Token.Type.EOF, "EOF");
+
         if (op.content().equals("//"))
         {
             while (currentChar != '\n')
@@ -274,6 +277,36 @@ public class Scanner
         }
         if (op.content().equals("*/"))
             compileThrow("unbalanced closing comment '*/'");
+
+        if (op.content().equals("\"") || op.content().equals("'"))
+        {
+            StringBuilder ret = new StringBuilder();
+            while (currentChar != op.content().charAt(0))
+            {
+                if (currentChar == '\\')
+                {
+                    eat('\\');
+                    switch (currentChar)
+                    {
+                        case 'n':
+                            ret.append('\n');
+                            break;
+                        case 't':
+                            ret.append('\t');
+                            break;
+                        default:
+                            ret.append(currentChar);
+                            break;
+                    }
+                }
+                else
+                    ret.append(currentChar);
+                eat(currentChar);
+            }
+
+            eat(op.content().charAt(0));
+            return newToken(Token.Type.StringLiteral, ret.toString());
+        }
 
         return op;
     }

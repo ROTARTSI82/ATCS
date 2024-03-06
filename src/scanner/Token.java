@@ -47,6 +47,11 @@ public record Token(int line, int col, Type type, String content)
          * Keyword, a special sub-case of the Identifier type.
          * See full keyword table definition in `Scanner::initializeTables`
          */
-        Keyword
+        Keyword,
+
+        /**
+         * content is a user-specified string literal, literally.
+         */
+        StringLiteral
     }
 }

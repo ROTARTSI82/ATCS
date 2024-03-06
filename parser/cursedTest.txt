@@ -1,0 +1,20 @@
+BEGIN
+WRITELN(9 mod 4);
+READLN(x);
+WRITELN(x);
+x := TRUE;
+y := 2 >= 3;
+x := 1 = 2;
+y := 1 <> 2;
+x := NOT x;
+x := x AND (FALSE OR y);
+WRITELN(1 = 2);
+x := 'hi';
+WRITELN(x);
+y := x, 'ppopotamuses';
+WRITELN(y);
+WRITELN(3, ' ', y);
+a := array[1..5];
+a[5] := 3;
+WRITELN(a[5]);
+END;
