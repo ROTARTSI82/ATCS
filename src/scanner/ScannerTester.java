@@ -1,5 +1,7 @@
 package scanner;
 
+import parser.Parser;
+
 import java.io.*;
 
 /**
@@ -23,8 +25,11 @@ public class ScannerTester
 
         System.out.println("=======================================");
 //        Scanner scan2 = new Scanner(new FileInputStream("scanner/ScannerTest.txt"));
-        Scanner scan2 = new Scanner(new FileReader("jflex/out.json"));
-        while (!scan2.yyatEOF())
+        Scanner scan2 = new Scanner(new FileInputStream("parser/parserTest0.txt"));
+        Parser parse = new Parser(scan2);
+        parse.parseStatement();
+        while (scan2.hasNext())
             System.out.println(scan2.nextToken());
+        System.out.println("end");
     }
 }
