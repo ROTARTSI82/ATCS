@@ -10,7 +10,7 @@ package parser;
  */
 public class PascalArray
 {
-    private final Object[] data;
+    private final BoxedValue[] data;
     private final int startIndex;
 
     /**
@@ -22,7 +22,9 @@ public class PascalArray
     public PascalArray(int lo, int hi)
     {
         startIndex = lo;
-        data = new Object[hi - lo + 1];
+        data = new BoxedValue[hi - lo + 1];
+        for (int i = lo; i <= hi; i++)
+            data[i - startIndex] = new BoxedValue(null);
     }
 
     /**
@@ -30,18 +32,8 @@ public class PascalArray
      * @param idx Index to read
      * @return A reference to the Object at idx
      */
-    public Object at(int idx)
+    public BoxedValue at(int idx)
     {
         return data[idx - startIndex];
-    }
-
-    /**
-     * Replaces the element at index idx (indexing according to Pascal's convention)
-     * @param idx Index to replace
-     * @param obj The new value to replace it with
-     */
-    public void set(int idx, Object obj)
-    {
-        data[idx - startIndex] = obj;
     }
 }

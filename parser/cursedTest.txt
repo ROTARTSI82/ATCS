@@ -1,5 +1,6 @@
 BEGIN
 WRITELN(9 mod 4);
+WRITELN(1 * 3 + 4 * 2);
 READLN(x);
 WRITELN(x);
 x := TRUE;
@@ -8,6 +9,7 @@ x := 1 = 2;
 y := 1 <> 2;
 x := NOT x;
 x := x AND (FALSE OR y);
+WRITELN(x);
 WRITELN(1 = 2);
 x := 'hi';
 WRITELN(x);

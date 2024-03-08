@@ -3,6 +3,7 @@ package parser;
 import scanner.Scanner;
 import scanner.Token;
 
+import javax.swing.*;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -25,12 +26,12 @@ public class Parser
 {
     final private Scanner scanner;
     private Token currentToken;
-    final private Map<String, Object> variables = new HashMap<>();
+    final private Map<String, BoxedValue> variables = new HashMap<>();
     private RValuePrecedenceLevel rvalueParser = null;
 
     private interface OperatorSAM
     {
-        public abstract Object apply(Object left, Object right);
+        public abstract Object apply(BoxedValue left, BoxedValue right);
     }
 
     private class RValuePrecedenceLevel
@@ -44,15 +45,17 @@ public class Parser
             this.next = next;
         }
 
-        public Object parse()
+        public BoxedValue parse()
         {
-            Object lhs = next == null ? parseFactor() : next.parse();
+            BoxedValue lhs = next == null ? parseFactor() : next.parse();
             while (operators.containsKey(currentToken.content()))
             {
                 String op = currentToken.content();
                 eat(op);
-                Object rhs = next == null ? parseFactor() : next.parse();
-                lhs = operators.get(op).apply(lhs, rhs);
+                BoxedValue rhs = next == null ? parseFactor() : next.parse();
+
+                // this might start to cause issues with operator=
+                lhs.set(operators.get(op).apply(lhs, rhs));
             }
             return lhs;
         }
@@ -65,24 +68,27 @@ public class Parser
 
         final List<Map<String, OperatorSAM>> operators = List.of(
                 Map.of(
-                        "*", (Object a, Object b) -> (Integer) a * (Integer) b,
-                        "/", (Object a, Object b) -> (Integer) a / (Integer) b,
-                        "mod", (Object a, Object b) -> (Integer) a % (Integer) b,
-                        "AND", (Object a, Object b) -> (Boolean) a && (Boolean) b
+                        "*", (a, b) -> a.asInt() * b.asInt(),
+                        "/", (a, b) -> a.asInt() / b.asInt(),
+                        "mod", (a, b) -> a.asInt() % b.asInt(),
+                        "AND", (a, b) -> a.asBool() && b.asBool()
                 ),
                 Map.of(
-                        "OR", (Object a, Object b) -> (Boolean) a || (Boolean) b,
-                        "+", (Object a, Object b) -> (Integer) a + (Integer) b,
-                        "-", (Object a, Object b) -> (Integer) a - (Integer) b,
-                        ",", (Object a, Object b) -> a.toString() + b.toString()
+                        "OR", (a, b) -> a.asBool() || b.asBool(),
+                        "+", (a, b) -> a.asInt() + b.asInt(),
+                        "-", (a, b) -> a.asInt() - b.asInt(),
+                        ",", (a, b) -> a.toString() + b.toString()
                 ),
                 Map.of(
-                        "=", Object::equals,
-                        "<>", (Object a, Object b) -> !a.equals(b),
-                        ">=", (Object a, Object b) -> (Integer) a >= (Integer) b,
-                        "<=", (Object a, Object b) -> (Integer) a <= (Integer) b,
-                        ">",  (Object a, Object b) -> (Integer) a > (Integer) b,
-                        "<",  (Object a, Object b) -> (Integer) a < (Integer) b
+                        "=", (a, b) -> a.get().equals(b.get()),
+                        "<>", (a, b) -> !a.get().equals(b.get()),
+                        ">=", (a, b) -> a.asInt() >= b.asInt(),
+                        "<=", (a, b) -> a.asInt() <= b.asInt(),
+                        ">",  (a, b) -> a.asInt() > b.asInt(),
+                        "<",  (a, b) -> a.asInt() < b.asInt()
+                ),
+                Map.of(
+                        ":=", (a, b) -> a.set(b.get())
                 )
         );
 
@@ -105,30 +111,11 @@ public class Parser
                     .formatted(currentToken, cont, type));
     }
 
-    private int parseNumber()
+    private BoxedValue parseNumber()
     {
         String cont = currentToken.content();
         eat(null, Token.Type.Numeric);
-        return Integer.parseInt(cont);
-    }
-
-    private Consumer<Object> parseLValue()
-    {
-        String id = currentToken.content();
-        eat(null, Token.Type.Identifier);
-
-        if (currentToken.content().equals("["))
-        {
-            eat("[");
-            int idx = (Integer) rvalueParser.parse();
-            eat("]");
-
-            return (Object o) -> ((PascalArray) variables.get(id)).set(idx, o);
-        }
-        else
-        {
-            return (Object o) -> variables.put(id, o);
-        }
+        return new BoxedValue(Integer.parseInt(cont));
     }
 
     public void parseStatement() throws IOException
@@ -155,23 +142,20 @@ public class Parser
             {
                 eat("READLN");
                 eat("(");
-                Consumer<Object> store = parseLValue();
+                BoxedValue value = rvalueParser.parse();
                 eat(")");
                 eat(";");
-                store.accept(new BufferedReader(new InputStreamReader(System.in)).readLine());
+                value.set(new BufferedReader(new InputStreamReader(System.in)).readLine());
             }
             default ->
             {
-                Consumer<Object> store = parseLValue();
-                eat(":=");
-                Object expr = rvalueParser.parse();
+                rvalueParser.parse();
                 eat(";");
-                store.accept(expr);
             }
         }
     }
 
-    private Object parseFactor()
+    private BoxedValue parseFactor()
     {
         switch (currentToken.content())
         {
@@ -180,37 +164,37 @@ public class Parser
                 eat("(");
                 Object ret = rvalueParser.parse();
                 eat(")");
-                return ret;
+                return new BoxedValue(ret);
             }
             case "-" ->
             {
                 eat("-");
-                return -(Integer) parseFactor();
+                return new BoxedValue(-(Integer) parseFactor().get());
             }
             case "NOT" ->
             {
                 eat("NOT");
-                return !(Boolean) parseFactor();
+                return new BoxedValue(!(Boolean) parseFactor().get());
             }
             case "TRUE" ->
             {
                 eat("TRUE");
-                return true;
+                return new BoxedValue(true);
             }
             case "FALSE" ->
             {
                 eat("FALSE");
-                return false;
+                return new BoxedValue(false);
             }
             case "array" ->
             {
                 eat("array");
                 eat("[");
-                int lo = (Integer) rvalueParser.parse();
+                int lo = (Integer) rvalueParser.parse().get();
                 eat("..");
-                int hi = (Integer) rvalueParser.parse();
+                int hi = (Integer) rvalueParser.parse().get();
                 eat("]");
-                return new PascalArray(lo, hi);
+                return new BoxedValue(new PascalArray(lo, hi));
             }
         }
 
@@ -218,7 +202,7 @@ public class Parser
         {
             String ret = currentToken.content();
             eat(ret);
-            return ret;
+            return new BoxedValue(ret);
         }
 
         if (currentToken.type().equals(Token.Type.Identifier))
@@ -226,12 +210,15 @@ public class Parser
             String id = currentToken.content();
             eat(id);
 
+            if (!variables.containsKey(id))
+                variables.put(id, BoxedValue.newNamed(id));
+
             if (currentToken.content().equals("["))
             {
                 eat("[");
-                int idx = (Integer) rvalueParser.parse();
+                int idx = (Integer) rvalueParser.parse().get();
                 eat("]");
-                return ((PascalArray) variables.get(id)).at(idx);
+                return ((PascalArray) variables.get(id).get()).at(idx);
             }
 
             return variables.get(id);
