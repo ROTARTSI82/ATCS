@@ -18,7 +18,8 @@ public class ScannerTester
      * @param args Command-line arguments
      * @throws FileNotFoundException If either of the two test cases cannot be read
      */
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException
+    {
 //        Scanner scan = new Scanner(new FileInputStream("scanner/scannerTestAdvanced.txt"));
 //        while (scan.hasNext())
 //            System.out.println(scan.nextToken());

@@ -6,23 +6,88 @@ import scanner.Token;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
-import java.util.function.Function;
 
+/**
+ * Parser.java
+ * @author Grant Yang
+ * @version 2024.03.06
+ *
+ * This parser parses the stream of tokens provided by a Scanner
+ * and evaluates as it goes, interpreting Pascal on the fly.
+ * It uses a right-recursive context-free grammar and parses
+ * from the bottom up using recursive descent.
+ */
 public class Parser
 {
     final private Scanner scanner;
     private Token currentToken;
     final private Map<String, Object> variables = new HashMap<>();
+    private RValuePrecedenceLevel rvalueParser = null;
+
+    private interface OperatorSAM
+    {
+        public abstract Object apply(Object left, Object right);
+    }
+
+    private class RValuePrecedenceLevel
+    {
+        private final RValuePrecedenceLevel next;
+        private final Map<String, OperatorSAM> operators;
+
+        public RValuePrecedenceLevel(Map<String, OperatorSAM> operators, RValuePrecedenceLevel next)
+        {
+            this.operators = operators;
+            this.next = next;
+        }
+
+        public Object parse()
+        {
+            Object lhs = next == null ? parseFactor() : next.parse();
+            while (operators.containsKey(currentToken.content()))
+            {
+                String op = currentToken.content();
+                eat(op);
+                Object rhs = next == null ? parseFactor() : next.parse();
+                lhs = operators.get(op).apply(lhs, rhs);
+            }
+            return lhs;
+        }
+    }
 
     public Parser(Scanner scanner)
     {
         this.scanner = scanner;
         currentToken = scanner.nextToken();
+
+        final List<Map<String, OperatorSAM>> operators = List.of(
+                Map.of(
+                        "*", (Object a, Object b) -> (Integer) a * (Integer) b,
+                        "/", (Object a, Object b) -> (Integer) a / (Integer) b,
+                        "mod", (Object a, Object b) -> (Integer) a % (Integer) b,
+                        "AND", (Object a, Object b) -> (Boolean) a && (Boolean) b
+                ),
+                Map.of(
+                        "OR", (Object a, Object b) -> (Boolean) a || (Boolean) b,
+                        "+", (Object a, Object b) -> (Integer) a + (Integer) b,
+                        "-", (Object a, Object b) -> (Integer) a - (Integer) b,
+                        ",", (Object a, Object b) -> a.toString() + b.toString()
+                ),
+                Map.of(
+                        "=", Object::equals,
+                        "<>", (Object a, Object b) -> !a.equals(b),
+                        ">=", (Object a, Object b) -> (Integer) a >= (Integer) b,
+                        "<=", (Object a, Object b) -> (Integer) a <= (Integer) b,
+                        ">",  (Object a, Object b) -> (Integer) a > (Integer) b,
+                        "<",  (Object a, Object b) -> (Integer) a < (Integer) b
+                )
+        );
+
+        for (var op: operators)
+            this.rvalueParser = new RValuePrecedenceLevel(op, this.rvalueParser);
     }
 
     private void eat(String token) throws IllegalArgumentException
@@ -47,7 +112,7 @@ public class Parser
         return Integer.parseInt(cont);
     }
 
-    private Consumer<Object> parseStoreLhs()
+    private Consumer<Object> parseLValue()
     {
         String id = currentToken.content();
         eat(null, Token.Type.Identifier);
@@ -55,10 +120,10 @@ public class Parser
         if (currentToken.content().equals("["))
         {
             eat("[");
-            int idx = (Integer) parseExpr();
+            int idx = (Integer) rvalueParser.parse();
             eat("]");
 
-            return (Object o) -> ((CursedArray) variables.get(id)).set(idx, o);
+            return (Object o) -> ((PascalArray) variables.get(id)).set(idx, o);
         }
         else
         {
@@ -82,7 +147,7 @@ public class Parser
             {
                 eat("WRITELN");
                 eat("(");
-                System.out.println(parsePossibleCmp());
+                System.out.println(rvalueParser.parse());
                 eat(")");
                 eat(";");
             }
@@ -90,16 +155,16 @@ public class Parser
             {
                 eat("READLN");
                 eat("(");
-                Consumer<Object> store = parseStoreLhs();
+                Consumer<Object> store = parseLValue();
                 eat(")");
                 eat(";");
                 store.accept(new BufferedReader(new InputStreamReader(System.in)).readLine());
             }
             default ->
             {
-                Consumer<Object> store = parseStoreLhs();
+                Consumer<Object> store = parseLValue();
                 eat(":=");
-                Object expr = parsePossibleCmp();
+                Object expr = rvalueParser.parse();
                 eat(";");
                 store.accept(expr);
             }
@@ -113,7 +178,7 @@ public class Parser
             case "(" ->
             {
                 eat("(");
-                Object ret = parseExpr();
+                Object ret = rvalueParser.parse();
                 eat(")");
                 return ret;
             }
@@ -141,11 +206,11 @@ public class Parser
             {
                 eat("array");
                 eat("[");
-                int lo = (Integer) parseExpr();
+                int lo = (Integer) rvalueParser.parse();
                 eat("..");
-                int hi = (Integer) parseExpr();
+                int hi = (Integer) rvalueParser.parse();
                 eat("]");
-                return new CursedArray(lo, hi);
+                return new PascalArray(lo, hi);
             }
         }
 
@@ -164,80 +229,14 @@ public class Parser
             if (currentToken.content().equals("["))
             {
                 eat("[");
-                int idx = (Integer) parseExpr();
+                int idx = (Integer) rvalueParser.parse();
                 eat("]");
-                return ((CursedArray) variables.get(id)).at(idx);
+                return ((PascalArray) variables.get(id)).at(idx);
             }
 
             return variables.get(id);
         }
 
         return parseNumber();
-    }
-
-    private Object parseTerm()
-    {
-        Object lhs = parseFactor();
-        final List<String> ops = List.of("*", "/", "AND", "mod");
-        while (ops.contains(currentToken.content()))
-        {
-            String op = currentToken.content();
-            eat(op);
-            Object rhs = parseFactor();
-            lhs = switch (op)
-            {
-                case "*" -> (Integer) lhs * (Integer) rhs;
-                case "/" -> (Integer) lhs / (Integer) rhs;
-                case "mod" -> (Integer) lhs % (Integer) rhs;
-                default -> (Boolean) lhs && (Boolean) rhs;
-            };
-        }
-
-        return lhs;
-    }
-
-    private Object parsePossibleCmp()
-    {
-        Object lhs = parseExpr();
-        final List<String> ops = List.of("<>", ">=", "<=", "=", ">", "<");
-        while (ops.contains(currentToken.content()))
-        {
-            String op = currentToken.content();
-            eat(op);
-            Object rhs = parseExpr();
-
-            lhs = switch (op)
-            {
-                default -> lhs.equals(rhs);
-                case "<>" -> !lhs.equals(rhs);
-                case ">=" -> (Integer) lhs >= (Integer) rhs;
-                case "<=" -> (Integer) lhs <= (Integer) rhs;
-                case ">" -> (Integer) lhs > (Integer) rhs;
-                case "<" -> (Integer) lhs < (Integer) rhs;
-            };
-        }
-        return lhs;
-    }
-
-    private Object parseExpr()
-    {
-        Object lhs = parseTerm();
-        final List<String> ops = List.of("+", "-", ",", "OR");
-        while (ops.contains(currentToken.content()))
-        {
-            String op = currentToken.content();
-            eat(op);
-            Object rhs = parseTerm();
-
-            lhs = switch (op)
-            {
-                case "+" -> (Integer) lhs + (Integer) rhs;
-                case "-" -> (Integer) lhs - (Integer) rhs;
-                case "," -> lhs.toString() + rhs.toString();
-                default -> (Boolean) lhs || (Boolean) rhs;
-            };
-        }
-
-        return lhs;
     }
 }

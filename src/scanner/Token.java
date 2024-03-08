@@ -50,7 +50,10 @@ public record Token(int line, int col, Type type, String content)
         Keyword,
 
         /**
-         * content is a user-specified string literal, literally.
+         * A String Literal, a user-specified constant.
+         * The content field would contain the content of the string literal verbatim,
+         * excluding the surrounding quotes and with specially escaped characters
+         * properly replaced with the real characters.
          */
         StringLiteral
     }
