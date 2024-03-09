@@ -9,32 +9,31 @@ public class BoxedValue
     public static BoxedValue newNamed(String name)
     {
         BoxedValue ret = new BoxedValue(null);
-        ret.name = name;
+        ret.name = name + "$$" + counter++;
         return ret;
     }
 
     public BoxedValue(Object val)
     {
+        if (val instanceof BoxedValue)
+            throw new RuntimeException("cannot nest boxed values: " + val);
         value = val;
         name += "$" + counter++;
-//        name += "{" + val + "}$" + counter++;
     }
 
     public Object get()
     {
         if (value instanceof BoxedValue)
-            throw new RuntimeException("nexted boxed value (on get): " + toString());
-//            return ((BoxedValue) value).get();
+            throw new RuntimeException("nested boxed value (on get): " + toString());
         return value;
     }
 
-    public Object set(Object v)
+    public BoxedValue set(Object v)
     {
         if (value instanceof BoxedValue)
             throw new RuntimeException("nested boxed value (on set): " + toString());
-//            return ((BoxedValue) value).set(v);
         value = v;
-        return v;
+        return this;
     }
 
     public int asInt()
@@ -57,5 +56,10 @@ public class BoxedValue
         if (rhs instanceof BoxedValue)
             return get().equals(((BoxedValue) rhs).get());
         throw new RuntimeException("comparison between boxed and non-boxed value");
+    }
+
+    public static BoxedValue box(Object val)
+    {
+        return new BoxedValue(val);
     }
 }

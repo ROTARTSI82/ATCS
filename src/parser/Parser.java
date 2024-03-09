@@ -7,6 +7,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.*;
+import static parser.BoxedValue.box;
 
 /**
  * Parser.java
@@ -27,7 +28,7 @@ public class Parser
 
     private interface OperatorSAM
     {
-        Object apply(BoxedValue left, BoxedValue right);
+        BoxedValue apply(BoxedValue left, BoxedValue right);
     }
 
     private class PrecedenceLevel
@@ -71,7 +72,7 @@ public class Parser
                     String opName = ops.removeLast();
 
                     System.out.print("operator rtl " + opName + "(" + left + ", " + right + ") = ");
-                    vals.add(new BoxedValue(operators.get(opName).apply(left, right)));
+                    vals.add(operators.get(opName).apply(left, right));
                     System.out.println(vals.getLast());
                 }
                 else
@@ -80,7 +81,7 @@ public class Parser
                     BoxedValue rhs = vals.removeFirst();
 
                     System.out.print("operator ltr " + opName + "(" + ret + ", " + rhs + ") = ");
-                    ret = new BoxedValue(operators.get(opName).apply(ret, rhs));
+                    ret = operators.get(opName).apply(ret, rhs);
                     System.out.println(ret);
                 }
 //                System.out.println("vals = " + vals + "\t ops = " + ops);
@@ -100,27 +101,27 @@ public class Parser
 
         final List<Map<Boolean, Map<String, OperatorSAM>>> operators = List.of(
                 Map.of(true, Map.of(
-                        "^", (a, b) -> (int) Math.pow(a.asInt(), b.asInt())
+                        "^", (a, b) -> box((int) Math.pow(a.asInt(), b.asInt()))
                 )),
                 Map.of(false, Map.of(
-                        "*", (a, b) -> a.asInt() * b.asInt(),
-                        "/", (a, b) -> a.asInt() / b.asInt(),
-                        "mod", (a, b) -> a.asInt() % b.asInt(),
-                        "AND", (a, b) -> a.asBool() && b.asBool()
+                        "*", (a, b) -> box(a.asInt() * b.asInt()),
+                        "/", (a, b) -> box(a.asInt() / b.asInt()),
+                        "mod", (a, b) -> box(a.asInt() % b.asInt()),
+                        "AND", (a, b) -> box(a.asBool() && b.asBool())
                 )),
                 Map.of(false, Map.of(
-                        "OR", (a, b) -> a.asBool() || b.asBool(),
-                        "+", (a, b) -> a.asInt() + b.asInt(),
-                        "-", (a, b) -> a.asInt() - b.asInt(),
-                        ",", (a, b) -> a.get().toString() + b.get().toString()
+                        "OR", (a, b) -> box(a.asBool() || b.asBool()),
+                        "+", (a, b) -> box(a.asInt() + b.asInt()),
+                        "-", (a, b) -> box(a.asInt() - b.asInt()),
+                        ",", (a, b) -> box(a.get().toString() + b.get().toString())
                 )),
                 Map.of(false, Map.of(
-                        "=", (a, b) -> a.get().equals(b.get()),
-                        "<>", (a, b) -> !a.get().equals(b.get()),
-                        ">=", (a, b) -> a.asInt() >= b.asInt(),
-                        "<=", (a, b) -> a.asInt() <= b.asInt(),
-                        ">",  (a, b) -> a.asInt() > b.asInt(),
-                        "<",  (a, b) -> a.asInt() < b.asInt()
+                        "=", (a, b) -> box(a.get().equals(b.get())),
+                        "<>", (a, b) -> box(!a.get().equals(b.get())),
+                        ">=", (a, b) -> box(a.asInt() >= b.asInt()),
+                        "<=", (a, b) -> box(a.asInt() <= b.asInt()),
+                        ">",  (a, b) -> box(a.asInt() > b.asInt()),
+                        "<",  (a, b) -> box(a.asInt() < b.asInt())
                 )),
                 Map.of(true, Map.of(
                         ":=", (a, b) -> a.set(b.get())
