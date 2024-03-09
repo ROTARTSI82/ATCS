@@ -3,14 +3,10 @@ package parser;
 import scanner.Scanner;
 import scanner.Token;
 
-import javax.swing.*;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.function.Consumer;
+import java.util.*;
 
 /**
  * Parser.java
@@ -27,37 +23,73 @@ public class Parser
     final private Scanner scanner;
     private Token currentToken;
     final private Map<String, BoxedValue> variables = new HashMap<>();
-    private RValuePrecedenceLevel rvalueParser = null;
+    private PrecedenceLevel exprParser = null;
 
     private interface OperatorSAM
     {
-        public abstract Object apply(BoxedValue left, BoxedValue right);
+        Object apply(BoxedValue left, BoxedValue right);
     }
 
-    private class RValuePrecedenceLevel
+    private class PrecedenceLevel
     {
-        private final RValuePrecedenceLevel next;
+        private final PrecedenceLevel next;
+        private final boolean rightAssociative;
         private final Map<String, OperatorSAM> operators;
 
-        public RValuePrecedenceLevel(Map<String, OperatorSAM> operators, RValuePrecedenceLevel next)
+        public PrecedenceLevel(boolean rtl, Map<String, OperatorSAM> ops, PrecedenceLevel next)
         {
-            this.operators = operators;
+            this.rightAssociative = rtl;
+            this.operators = ops;
             this.next = next;
         }
 
         public BoxedValue parse()
         {
-            BoxedValue lhs = next == null ? parseFactor() : next.parse();
+            LinkedList<String> ops = new LinkedList<>();
+            LinkedList<BoxedValue> vals = new LinkedList<>();
+
+            BoxedValue ret = next == null ? parseFactor() : next.parse();
+            if (rightAssociative)
+                vals.add(ret);
+
             while (operators.containsKey(currentToken.content()))
             {
                 String op = currentToken.content();
                 eat(op);
-                BoxedValue rhs = next == null ? parseFactor() : next.parse();
-
-                // this might start to cause issues with operator=
-                lhs.set(operators.get(op).apply(lhs, rhs));
+                ops.add(op);
+                vals.add(next == null ? parseFactor() : next.parse());
             }
-            return lhs;
+
+//            System.out.println("layer " + operators.keySet() +
+//                    ": vals = " + vals + " ops = " + ops);
+            while (!ops.isEmpty())
+            {
+                if (rightAssociative)
+                {
+                    BoxedValue right = vals.removeLast();
+                    BoxedValue left = vals.removeLast();
+                    String opName = ops.removeLast();
+
+                    System.out.print("operator rtl " + opName + "(" + left + ", " + right + ") = ");
+                    vals.add(new BoxedValue(operators.get(opName).apply(left, right)));
+                    System.out.println(vals.getLast());
+                }
+                else
+                {
+                    String opName = ops.removeFirst();
+                    BoxedValue rhs = vals.removeFirst();
+
+                    System.out.print("operator ltr " + opName + "(" + ret + ", " + rhs + ") = ");
+                    ret = new BoxedValue(operators.get(opName).apply(ret, rhs));
+                    System.out.println(ret);
+                }
+//                System.out.println("vals = " + vals + "\t ops = " + ops);
+            }
+
+            if (rightAssociative)
+                return vals.getLast();
+            else
+                return ret;
         }
     }
 
@@ -66,34 +98,40 @@ public class Parser
         this.scanner = scanner;
         currentToken = scanner.nextToken();
 
-        final List<Map<String, OperatorSAM>> operators = List.of(
-                Map.of(
+        final List<Map<Boolean, Map<String, OperatorSAM>>> operators = List.of(
+                Map.of(true, Map.of(
+                        "^", (a, b) -> (int) Math.pow(a.asInt(), b.asInt())
+                )),
+                Map.of(false, Map.of(
                         "*", (a, b) -> a.asInt() * b.asInt(),
                         "/", (a, b) -> a.asInt() / b.asInt(),
                         "mod", (a, b) -> a.asInt() % b.asInt(),
                         "AND", (a, b) -> a.asBool() && b.asBool()
-                ),
-                Map.of(
+                )),
+                Map.of(false, Map.of(
                         "OR", (a, b) -> a.asBool() || b.asBool(),
                         "+", (a, b) -> a.asInt() + b.asInt(),
                         "-", (a, b) -> a.asInt() - b.asInt(),
-                        ",", (a, b) -> a.toString() + b.toString()
-                ),
-                Map.of(
+                        ",", (a, b) -> a.get().toString() + b.get().toString()
+                )),
+                Map.of(false, Map.of(
                         "=", (a, b) -> a.get().equals(b.get()),
                         "<>", (a, b) -> !a.get().equals(b.get()),
                         ">=", (a, b) -> a.asInt() >= b.asInt(),
                         "<=", (a, b) -> a.asInt() <= b.asInt(),
                         ">",  (a, b) -> a.asInt() > b.asInt(),
                         "<",  (a, b) -> a.asInt() < b.asInt()
-                ),
-                Map.of(
+                )),
+                Map.of(true, Map.of(
                         ":=", (a, b) -> a.set(b.get())
-                )
+                ))
         );
 
         for (var op: operators)
-            this.rvalueParser = new RValuePrecedenceLevel(op, this.rvalueParser);
+        {
+            boolean rtl = op.containsKey(true);
+            this.exprParser = new PrecedenceLevel(rtl, op.get(rtl), this.exprParser);
+        }
     }
 
     private void eat(String token) throws IllegalArgumentException
@@ -134,7 +172,7 @@ public class Parser
             {
                 eat("WRITELN");
                 eat("(");
-                System.out.println(rvalueParser.parse());
+                System.out.println(exprParser.parse().get());
                 eat(")");
                 eat(";");
             }
@@ -142,14 +180,14 @@ public class Parser
             {
                 eat("READLN");
                 eat("(");
-                BoxedValue value = rvalueParser.parse();
+                BoxedValue value = exprParser.parse();
                 eat(")");
                 eat(";");
                 value.set(new BufferedReader(new InputStreamReader(System.in)).readLine());
             }
             default ->
             {
-                rvalueParser.parse();
+                exprParser.parse();
                 eat(";");
             }
         }
@@ -162,9 +200,9 @@ public class Parser
             case "(" ->
             {
                 eat("(");
-                Object ret = rvalueParser.parse();
+                BoxedValue ret = exprParser.parse();
                 eat(")");
-                return new BoxedValue(ret);
+                return ret;
             }
             case "-" ->
             {
@@ -190,9 +228,9 @@ public class Parser
             {
                 eat("array");
                 eat("[");
-                int lo = (Integer) rvalueParser.parse().get();
+                int lo = (Integer) exprParser.parse().get();
                 eat("..");
-                int hi = (Integer) rvalueParser.parse().get();
+                int hi = (Integer) exprParser.parse().get();
                 eat("]");
                 return new BoxedValue(new PascalArray(lo, hi));
             }
@@ -216,7 +254,7 @@ public class Parser
             if (currentToken.content().equals("["))
             {
                 eat("[");
-                int idx = (Integer) rvalueParser.parse().get();
+                int idx = (Integer) exprParser.parse().get();
                 eat("]");
                 return ((PascalArray) variables.get(id).get()).at(idx);
             }

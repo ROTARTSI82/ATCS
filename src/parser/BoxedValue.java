@@ -2,9 +2,9 @@ package parser;
 
 public class BoxedValue
 {
-    private final static boolean DEBUG = false;
+    private static int counter = 0;
     private Object value;
-    private String name = "ANON";
+    private String name = "var";
 
     public static BoxedValue newNamed(String name)
     {
@@ -16,48 +16,46 @@ public class BoxedValue
     public BoxedValue(Object val)
     {
         value = val;
+        name += "$" + counter++;
+//        name += "{" + val + "}$" + counter++;
     }
 
     public Object get()
     {
         if (value instanceof BoxedValue)
-            return ((BoxedValue) value).get();
+            throw new RuntimeException("nexted boxed value (on get): " + toString());
+//            return ((BoxedValue) value).get();
         return value;
     }
 
     public Object set(Object v)
     {
         if (value instanceof BoxedValue)
-            return ((BoxedValue) value).set(v);
+            throw new RuntimeException("nested boxed value (on set): " + toString());
+//            return ((BoxedValue) value).set(v);
         value = v;
         return v;
     }
 
     public int asInt()
     {
-        if (value instanceof BoxedValue)
-            return ((BoxedValue) value).asInt();
-        return (Integer) value;
+        return (Integer) get();
     }
 
     public boolean asBool()
     {
-        if (value instanceof BoxedValue)
-            return ((BoxedValue) value).asBool();
-        return (Boolean) value;
+        return (Boolean) get();
     }
 
     public String toString()
     {
-        if (DEBUG)
-            return "box[" + value.toString() + "]";
-        return value.toString();
+        return name + "{" + value + "}";
     }
 
     public boolean equals(Object rhs)
     {
         if (rhs instanceof BoxedValue)
-            return value.equals(((BoxedValue) rhs).value);
-        return super.equals(rhs);
+            return get().equals(((BoxedValue) rhs).get());
+        throw new RuntimeException("comparison between boxed and non-boxed value");
     }
 }

@@ -19,4 +19,9 @@ WRITELN(3, ' ', y);
 a := array[1..5];
 a[5] := 3;
 WRITELN(a[5]);
+
+WRITELN("===== sep");
+
+WRITELN(1 - 3 - 5 + 3 - 4);
+WRITELN(4^3^2);
 END;

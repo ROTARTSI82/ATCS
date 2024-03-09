@@ -10,8 +10,10 @@ package parser;
  */
 public class PascalArray
 {
+    private static int counter = 0;
     private final BoxedValue[] data;
     private final int startIndex;
+    private final int tag;
 
     /**
      * Construct and allocate a new array with indices ranging from lo to hi, inclusive.
@@ -24,7 +26,8 @@ public class PascalArray
         startIndex = lo;
         data = new BoxedValue[hi - lo + 1];
         for (int i = lo; i <= hi; i++)
-            data[i - startIndex] = new BoxedValue(null);
+            data[i - startIndex] = BoxedValue.newNamed("arr_" + counter + "$" + i);
+        tag = counter++;
     }
 
     /**
@@ -35,5 +38,10 @@ public class PascalArray
     public BoxedValue at(int idx)
     {
         return data[idx - startIndex];
+    }
+
+    public String toString()
+    {
+        return "arr_" + tag;
     }
 }

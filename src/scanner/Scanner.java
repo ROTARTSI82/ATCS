@@ -40,7 +40,7 @@ public class Scanner
         operators = Set.of(
                 "+", "-", "*", "/*", "*/", "/", "//", "(", ")",
                 ":", ":=", "<=", ">=", "<", ">", ".", "=", "%", ";", "<>", "\"", "'", ",", "[", "]",
-                ".."
+                "..", "^"
         );
         partialOperators = Set.of(":");
         keywords = Set.of("BEGIN", "END", "VAR", "WHILE", "RETURN", "PROCEDURE", "DO", "WRITELN");
@@ -127,7 +127,10 @@ public class Scanner
         {
             int value = in.read();
             if (value == -1)
+            {
                 eof = true;
+                currentChar = 0;
+            }
             else if (value < 256)
                 currentChar = (char) value;
             else
