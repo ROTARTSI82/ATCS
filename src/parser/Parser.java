@@ -18,32 +18,52 @@ import static parser.BoxedValue.box;
  * and evaluates as it goes, interpreting Pascal on the fly.
  * It uses a right-recursive context-free grammar and parses
  * from the bottom up using recursive descent.
+ * See the map definition in the constructor for a full
+ * list of operators this parser supports.
  */
 public class Parser
 {
     final private Scanner scanner;
     private Token currentToken;
     final private Map<String, BoxedValue> variables = new HashMap<>();
-    private PrecedenceLevel exprParser = null;
+    private PrecedenceLevelParser exprParser = null;
 
     private interface OperatorSAM
     {
         BoxedValue apply(BoxedValue left, BoxedValue right);
     }
 
-    private class PrecedenceLevel
+    /**
+     * This class represents a precedence level of operators to be parsed,
+     * and implements a method for parsing such expressions of that precedence level
+     * from the input stream. This class generalizes parseTerm() and parseExpression().
+     */
+    private class PrecedenceLevelParser
     {
-        private final PrecedenceLevel next;
+        private final PrecedenceLevelParser next;
         private final boolean rightAssociative;
         private final Map<String, OperatorSAM> operators;
 
-        public PrecedenceLevel(boolean rtl, Map<String, OperatorSAM> ops, PrecedenceLevel next)
+        /**
+         * Construct a new parser for a specific precedence level
+         * @param rtl If true, this operator is right-associative.
+         * @param ops Mapping from the text of an operator to the associated action to take
+         * @param next The next lower precedence level after this, to form a linked list
+         */
+        public PrecedenceLevelParser(boolean rtl, Map<String, OperatorSAM> ops,
+                                     PrecedenceLevelParser next)
         {
             this.rightAssociative = rtl;
             this.operators = ops;
             this.next = next;
         }
 
+        /**
+         * Parse an expression of this precedence level from the input stream of
+         * the parser, falling back to either the `next` precedence level
+         * or to `parseFactor()` if `next` is null.
+         * @return The (boxed) value of the expression in the input stream
+         */
         public BoxedValue parse()
         {
             LinkedList<String> ops = new LinkedList<>();
@@ -70,19 +90,19 @@ public class Parser
                     BoxedValue right = vals.removeLast();
                     BoxedValue left = vals.removeLast();
                     String opName = ops.removeLast();
-
-                    System.out.print("operator rtl " + opName + "(" + left + ", " + right + ") = ");
+//                    System.out.print("operator rtl " + opName +
+//                            "(" + left + ", " + right + ") = ");
                     vals.add(operators.get(opName).apply(left, right));
-                    System.out.println(vals.getLast());
+//                    System.out.println(vals.getLast());
                 }
                 else
                 {
                     String opName = ops.removeFirst();
                     BoxedValue rhs = vals.removeFirst();
 
-                    System.out.print("operator ltr " + opName + "(" + ret + ", " + rhs + ") = ");
+//                    System.out.print("operator ltr " + opName + "(" + ret + ", " + rhs + ") = ");
                     ret = operators.get(opName).apply(ret, rhs);
-                    System.out.println(ret);
+//                    System.out.println(ret);
                 }
 //                System.out.println("vals = " + vals + "\t ops = " + ops);
             }
@@ -94,6 +114,11 @@ public class Parser
         }
     }
 
+    /**
+     * Constructs a new parser to parse the tokens scanned in by
+     * the scanner specified.
+     * @param scanner The scanner to read from
+     */
     public Parser(Scanner scanner)
     {
         this.scanner = scanner;
@@ -131,15 +156,19 @@ public class Parser
         for (var op: operators)
         {
             boolean rtl = op.containsKey(true);
-            this.exprParser = new PrecedenceLevel(rtl, op.get(rtl), this.exprParser);
+            this.exprParser = new PrecedenceLevelParser(rtl, op.get(rtl), this.exprParser);
         }
     }
 
-    private void eat(String token) throws IllegalArgumentException
-    {
-        eat(token, null);
-    }
-
+    /**
+     * Consumes a token from the input stream, with checks for its specific
+     * content and type to emit an error on invalid input.
+     * @param cont The expected string content of the token, or null to specify any string.
+     * @param type The expected type of the token, or null to specify any type.
+     * @precondition The next token in the scanner matches the expected criteria
+     * @postcondition The scanner has advanced forward by 1 token
+     * @throws IllegalArgumentException If the read token does not match the expected one
+     */
     private void eat(String cont, Token.Type type) throws IllegalArgumentException
     {
         if ((type == null || currentToken.type().equals(type))
@@ -150,6 +179,17 @@ public class Parser
                     .formatted(currentToken, cont, type));
     }
 
+    private void eat(String token) throws IllegalArgumentException
+    {
+        eat(token, null);
+    }
+
+    /**
+     * Parse an integer from the input stream
+     * @precondition The scanner is located at the beginning of an integer literal
+     * @postcondition The scanner has advanced past the integer literal
+     * @return The integer value that has appeared
+     */
     private BoxedValue parseNumber()
     {
         String cont = currentToken.content();
@@ -157,6 +197,15 @@ public class Parser
         return new BoxedValue(Integer.parseInt(cont));
     }
 
+    /**
+     * Parses a and executes a Pascal statement from the input stream.
+     * Statement types include blocks (BEGIN ... END;), WRITELN() calls,
+     * READLN() calls, and expressions handled by `exprParser`.
+     * @precondition The input stream is located at the beginning of a statement
+     * @postcondition The input stream has advanced past the end of the statement,
+     *                and any side effects like WRITELN and READLN have been performed.
+     * @throws IOException If reading from standard input for a READLN fails
+     */
     public void parseStatement() throws IOException
     {
         switch (currentToken.content())
@@ -194,6 +243,14 @@ public class Parser
         }
     }
 
+    /**
+     * Parses a factor, the highest precedence level and the basic building blocks
+     * in Pascal. Factors include identifiers (variables), strings, unary operators (-, NOT),
+     * parenthesis, and special values like arrays (array[1..5]) along with TRUE and FALSE
+     * @precondition The input stream is located at the beginning of a valid factor expression.
+     * @postcondition The input stream has advanced past the factor.
+     * @return The value of the factor that appears in the input stream
+     */
     private BoxedValue parseFactor()
     {
         switch (currentToken.content())

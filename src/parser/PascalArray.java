@@ -1,5 +1,7 @@
 package parser;
 
+import java.util.Arrays;
+
 /**
  * PascalArray.java implements an array that supports special
  * indexing, as required by Pascal. The start index can be set
@@ -11,6 +13,7 @@ package parser;
 public class PascalArray
 {
     private static int counter = 0;
+
     private final BoxedValue[] data;
     private final int startIndex;
     private final int tag;
@@ -26,7 +29,8 @@ public class PascalArray
         startIndex = lo;
         data = new BoxedValue[hi - lo + 1];
         for (int i = lo; i <= hi; i++)
-            data[i - startIndex] = BoxedValue.newNamed("arr_" + counter + "$" + i);
+            data[i - startIndex] = BoxedValue.newNamed(
+                    "$arr<" + lo + ">$" + counter + "[" + i + "]");
         tag = counter++;
     }
 
@@ -40,8 +44,12 @@ public class PascalArray
         return data[idx - startIndex];
     }
 
+    /**
+     * Converts the array to a string, dumping the full contents.
+     * @return A string of the form "$arr<#>$##=[a,b,...]"
+     */
     public String toString()
     {
-        return "arr_" + tag;
+        return "$arr<" + startIndex + ">$" + tag + "=" + Arrays.toString(data);
     }
 }
