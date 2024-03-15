@@ -1,5 +1,7 @@
 package scanner;
 
+import ast.Environment;
+import ast.Statement;
 import parser.Parser;
 
 import java.io.*;
@@ -26,9 +28,14 @@ public class ScannerTester
 
         System.out.println("=======================================");
 //        Scanner scan2 = new Scanner(new FileInputStream("scanner/ScannerTest.txt"));
-        Scanner scan2 = new Scanner(new FileInputStream("parser/cursedTest.txt"));
+        Scanner scan2 = new Scanner(new FileInputStream("ast/parserTest6.txt"));
+        Environment env = new Environment();
         Parser parse = new Parser(scan2);
-        parse.parseStatement();
+        Statement s = parse.parseStatement();
+        System.out.println("exec1");
+        s.exec(env);
+        System.out.println("e2");
+        s.exec(env);
 //        while (scan2.hasNext())
 //            System.out.println(scan2.nextToken());
 //        System.out.println("end");
