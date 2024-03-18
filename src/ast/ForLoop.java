@@ -22,10 +22,11 @@ public class ForLoop implements Statement
             try
             {
                 body.exec(env);
+                val.set(val.asInt() + 1);
             }
             catch (BreakException b)
             {
-                break;
+                return;
             }
             catch (ContinueException c)
             {

@@ -21,7 +21,7 @@ public class WhileLoop implements Statement
             }
             catch (BreakException b)
             {
-                break;
+                return;
             }
             catch (ContinueException c)
             {

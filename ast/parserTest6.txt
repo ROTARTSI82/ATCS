@@ -14,6 +14,22 @@ BEGIN
 		WRITELN(x);
 		x := x + 1;
 	END;
-	
+
+    sum := 0;
+	FOR i := 1 TO 10 DO
+    BEGIN
+    sum := sum + i;
+    WRITELN(sum);
+    END;
+
+    i := 0;
+    WHILE i <= 128 DO
+    BEGIN
+    i := i + 1;
+    IF i = 3 THEN BREAK;
+    WRITELN(i);
+    IF i = 2 THEN CONTINUE;
+    WRITELN(i);
+    END;
 END;
 .

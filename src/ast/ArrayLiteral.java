@@ -20,4 +20,10 @@ public class ArrayLiteral implements Expression
     {
         return box(new PascalArray(lowerBound.eval(env).asInt(), upperBound.eval(env).asInt()));
     }
+
+    @Override
+    public String toString()
+    {
+        return "array[" + lowerBound + ".." + upperBound + "]";
+    }
 }
