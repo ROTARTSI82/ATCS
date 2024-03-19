@@ -30,7 +30,7 @@ public class PascalArray
         data = new BoxedValue[hi - lo + 1];
         for (int i = lo; i <= hi; i++)
             data[i - startIndex] = BoxedValue.newNamed(
-                    "$arr<" + lo + ">$" + counter + "[" + i + "]");
+                    "$arr" + counter + "[" + i + "]");
         tag = counter++;
     }
 
@@ -50,6 +50,6 @@ public class PascalArray
      */
     public String toString()
     {
-        return "$arr<" + startIndex + ">$" + tag + "=" + Arrays.toString(data);
+        return "$arr" + tag + "=" + Arrays.toString(data);
     }
 }

@@ -4,10 +4,9 @@ import ast.*;
 import scanner.Scanner;
 import scanner.Token;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
 import java.util.*;
+
+import static ast.NamedExpression.namedOp;
 import static parser.BoxedValue.box;
 
 /**
@@ -37,7 +36,7 @@ public class Parser
     {
         private final PrecedenceLevelParser next;
         private final boolean rightAssociative;
-        private final Map<String, OperatorSAM> operators;
+        private final List<String> operators;
 
         /**
          * Construct a new parser for a specific precedence level
@@ -45,7 +44,7 @@ public class Parser
          * @param ops Mapping from the text of an operator to the associated action to take
          * @param next The next lower precedence level after this, to form a linked list
          */
-        public PrecedenceLevelParser(boolean rtl, Map<String, OperatorSAM> ops,
+        public PrecedenceLevelParser(boolean rtl, List<String> ops,
                                      PrecedenceLevelParser next)
         {
             this.rightAssociative = rtl;
@@ -68,7 +67,7 @@ public class Parser
             if (rightAssociative)
                 vals.add(ret);
 
-            while (operators.containsKey(currentToken.content()))
+            while (operators.contains(currentToken.content()))
             {
                 String op = currentToken.content();
                 eat(op);
@@ -83,13 +82,13 @@ public class Parser
                     Expression right = vals.removeLast();
                     Expression left = vals.removeLast();
                     String opName = ops.removeLast();
-                    vals.add(new BinOp(operators.get(opName), left, right));
+                    vals.add(new BinOp(opName, left, right));
                 }
                 else
                 {
                     String opName = ops.removeFirst();
                     Expression rhs = vals.removeFirst();
-                    ret = new BinOp(operators.get(opName), ret, rhs);
+                    ret = new BinOp(opName, ret, rhs);
                 }
             }
 
@@ -110,39 +109,10 @@ public class Parser
         this.scanner = scanner;
         currentToken = scanner.nextToken();
 
-        final List<Map<Boolean, Map<String, OperatorSAM>>> operators = List.of(
-                Map.of(true, Map.of(
-                        "^", OperatorSAM.POW
-                )),
-                Map.of(false, Map.of(
-                        "*", OperatorSAM.MUL,
-                        "/", OperatorSAM.DIV,
-                        "mod", OperatorSAM.MOD,
-                        "AND", OperatorSAM.AND
-                )),
-                Map.of(false, Map.of(
-                        "OR", OperatorSAM.OR,
-                        "+", OperatorSAM.ADD,
-                        "-", OperatorSAM.SUB,
-                        ",", OperatorSAM.CONCAT
-                )),
-                Map.of(false, Map.of(
-                        "=", OperatorSAM.EQ,
-                        "<>", OperatorSAM.NE,
-                        ">=", OperatorSAM.GE,
-                        "<=", OperatorSAM.LE,
-                        ">",  OperatorSAM.GT,
-                        "<",  OperatorSAM.LT
-                )),
-                Map.of(true, Map.of(
-                        ":=", OperatorSAM.SET
-                ))
-        );
-
-        for (var op: operators)
+        for (var op: OperatorSAM.PRECEDENCE)
         {
-            boolean rtl = op.containsKey(true);
-            this.exprParser = new PrecedenceLevelParser(rtl, op.get(rtl), this.exprParser);
+            boolean rtl = op.getKey();
+            this.exprParser = new PrecedenceLevelParser(rtl, op.getValue(), this.exprParser);
         }
     }
 
@@ -180,7 +150,7 @@ public class Parser
     {
         String cont = currentToken.content();
         eat(null, Token.Type.Numeric);
-        return (e) -> box(Integer.parseInt(cont));
+        return namedOp((e) -> box(Integer.parseInt(cont)), "#" + cont);
     }
 
     /**
@@ -296,13 +266,13 @@ public class Parser
             {
                 eat("-");
                 Expression expr = parseFactor();
-                return (e) -> box(-expr.eval(e).asInt());
+                return namedOp((e) -> box(-expr.eval(e).asInt()), "-" + expr);
             }
             case "NOT" ->
             {
                 eat("NOT");
                 Expression expr = parseFactor();
-                return (e) -> box(!expr.eval(e).asBool());
+                return namedOp((e) -> box(!expr.eval(e).asBool()), "NOT " + expr);
             }
             case "TRUE" ->
             {
@@ -330,7 +300,7 @@ public class Parser
         {
             String ret = currentToken.content();
             eat(ret);
-            return (e) -> box(ret);
+            return namedOp((e) -> box(ret), "\"" + ret + "\"");
         }
 
         if (currentToken.type().equals(Token.Type.Identifier))
@@ -343,10 +313,13 @@ public class Parser
                 eat("[");
                 Expression idx = exprParser.parse();
                 eat("]");
-                return (e) -> ((PascalArray) e.getVariable(id).get()).at(idx.eval(e).asInt());
+                return namedOp(
+                        (e) -> ((PascalArray) e.getVariable(id).get()).at(idx.eval(e).asInt()),
+                        "$" + id + "[" + idx + "]"
+                );
             }
 
-            return (e) -> e.getVariable(id);
+            return namedOp((e) -> e.getVariable(id), "$" + id);
         }
 
         return parseNumber();
