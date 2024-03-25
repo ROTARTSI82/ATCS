@@ -4,7 +4,6 @@ import parser.BoxedValue;
 
 public class BinOp implements Expression
 {
-
     private Expression lhs, rhs;
     private String name;
 
@@ -19,7 +18,7 @@ public class BinOp implements Expression
     public BoxedValue eval(Environment env)
     {
         BoxedValue ret = OperatorSAM.NAME_MAP.get(name).apply(env, lhs, rhs);
-//        System.out.println(this + " = " + ret);
+        System.out.println(this + " = " + ret);
         return ret;
     }
 

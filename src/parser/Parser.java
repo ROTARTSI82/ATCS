@@ -41,7 +41,7 @@ public class Parser
         /**
          * Construct a new parser for a specific precedence level
          * @param rtl If true, this operator is right-associative.
-         * @param ops Mapping from the text of an operator to the associated action to take
+         * @param ops A list of operators that this precedence level should try to parse.
          * @param next The next lower precedence level after this, to form a linked list
          */
         public PrecedenceLevelParser(boolean rtl, List<String> ops,
@@ -56,7 +56,7 @@ public class Parser
          * Parse an expression of this precedence level from the input stream of
          * the parser, falling back to either the `next` precedence level
          * or to `parseFactor()` if `next` is null.
-         * @return The (boxed) value of the expression in the input stream
+         * @return An AST node representing the expression that was parsed
          */
         public Expression parse()
         {
@@ -144,7 +144,7 @@ public class Parser
      * Parse an integer from the input stream
      * @precondition The scanner is located at the beginning of an integer literal
      * @postcondition The scanner has advanced past the integer literal
-     * @return The integer value that has appeared
+     * @return An AST node representing the integer value that appeared
      */
     private Expression parseNumber()
     {
@@ -159,7 +159,8 @@ public class Parser
      * READLN() calls, and expressions handled by `exprParser`.
      * @precondition The input stream is located at the beginning of a statement
      * @postcondition The input stream has advanced past the end of the statement,
-     *                and any side effects like WRITELN and READLN have been performed.
+     *                but no code has been executed.
+     * @return An AST node representing the statement
      */
     public Statement parseStatement()
     {
@@ -209,12 +210,12 @@ public class Parser
             case "BEGIN" ->
             {
                 eat("BEGIN");
-                Block blk = new Block();
+                ArrayList<Statement> blk = new ArrayList<>();
                 while (!currentToken.content().equals("END"))
                     blk.add(parseStatement());
                 eat("END");
                 eat(";");
-                return blk;
+                return (e) -> blk.forEach((s) -> s.exec(e));
             }
             case "WRITELN" ->
             {
@@ -249,7 +250,7 @@ public class Parser
      * parenthesis, and special values like arrays (array[1..5]) along with TRUE and FALSE
      * @precondition The input stream is located at the beginning of a valid factor expression.
      * @postcondition The input stream has advanced past the factor.
-     * @return The value of the factor that appears in the input stream
+     * @return An AST node representing the parsed factor
      */
     private Expression parseFactor()
     {
@@ -292,7 +293,10 @@ public class Parser
                 eat("..");
                 Expression hi = exprParser.parse();
                 eat("]");
-                return new ArrayLiteral(lo, hi);
+                return namedOp(
+                        (e) -> box(new PascalArray(lo.eval(e).asInt(), hi.eval(e).asInt())),
+                        "arr[" + lo + ".." + hi + "]"
+                );
             }
         }
 

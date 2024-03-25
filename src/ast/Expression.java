@@ -8,7 +8,7 @@ import static parser.BoxedValue.newNamed;
 
 public interface Expression
 {
-    public abstract BoxedValue eval(Environment env);
+    BoxedValue eval(Environment env);
 
     Expression TRUE = namedOp((e) -> box(true), "true");
     Expression FALSE = namedOp((e) -> box(false), "false");

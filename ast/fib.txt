@@ -1,0 +1,11 @@
+BEGIN
+    a := 1;
+    b := 1;
+
+    FOR i := 0 TO 100 DO
+    BEGIN
+        c := b;
+        b := a + b;
+        WRITELN(a := c);
+    END;
+END;

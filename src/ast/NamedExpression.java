@@ -2,6 +2,9 @@ package ast;
 
 import parser.BoxedValue;
 
+/**
+ * Thin wrapper around Expressions that give names to them
+ */
 public class NamedExpression implements Expression
 {
     private Expression op;

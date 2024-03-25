@@ -1,9 +1,11 @@
 package ast;
 
-
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 
+/**
+ *
+ */
 public class ReadLn implements Statement
 {
     private final Expression expr;

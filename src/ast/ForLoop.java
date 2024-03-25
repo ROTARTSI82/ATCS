@@ -13,6 +13,7 @@ public class ForLoop implements Statement
         this.stop = stop;
         this.body = body;
     }
+
     @Override
     public void exec(Environment env) throws ContinueException, BreakException
     {
@@ -22,15 +23,18 @@ public class ForLoop implements Statement
             try
             {
                 body.exec(env);
-                val.set(val.asInt() + 1);
             }
             catch (BreakException b)
             {
                 return;
             }
-            catch (ContinueException c)
+            catch (ContinueException ignored)
             {
-                continue;
+            }
+            finally
+            {
+                // this will execute in the case of BREAK too
+                val.set(val.asInt() + 1);
             }
     }
 }

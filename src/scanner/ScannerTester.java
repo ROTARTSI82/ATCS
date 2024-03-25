@@ -28,7 +28,7 @@ public class ScannerTester
 
         System.out.println("=======================================");
 //        Scanner scan2 = new Scanner(new FileInputStream("scanner/ScannerTest.txt"));
-        Scanner scan2 = new Scanner(new FileInputStream("ast/parserTest6.txt"));
+        Scanner scan2 = new Scanner(new FileInputStream("ast/fib.txt"));
         Environment env = new Environment();
         Parser parse = new Parser(scan2);
         Statement s = parse.parseStatement();

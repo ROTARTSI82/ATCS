@@ -1,5 +1,7 @@
 package parser;
 
+import javax.swing.*;
+
 /**
  * BoxedValue.java
  * @author Grant Yang
@@ -28,21 +30,10 @@ public class BoxedValue
      */
     public static BoxedValue newNamed(String name)
     {
-        BoxedValue ret = new BoxedValue(null);
-        ret.name = name + "$" + (counter - 1);
+        BoxedValue ret = new BoxedValue();
+        ret.value = null;
+        ret.name = name + "$" + counter++;
         return ret;
-    }
-
-    /**
-     * Construct a new BoxedValue with a specific internal value
-     * @param val The value for this box to hold.
-     */
-    public BoxedValue(Object val)
-    {
-        if (val instanceof BoxedValue)
-            throw new RuntimeException("cannot nest boxed values: " + val);
-        value = val;
-        name = "$" + counter++;
     }
 
     /**
@@ -96,13 +87,18 @@ public class BoxedValue
     }
 
     /**
-     * Convenience method to create a new BoxedValue because
-     * the syntax to call the constructor is annoying and verbose.
+     * Convenience method to construct a new boxed value with
+     * the specified internal value.
      * @param val Value for the box to contain
      * @return A new box containing the specified value
      */
     public static BoxedValue box(Object val)
     {
-        return new BoxedValue(val);
+        if (val instanceof BoxedValue)
+            throw new RuntimeException("cannot nest boxed values: " + val);
+        BoxedValue ret = new BoxedValue();
+        ret.value = val;
+        ret.name = "$" + counter++;
+        return ret;
     }
 }
